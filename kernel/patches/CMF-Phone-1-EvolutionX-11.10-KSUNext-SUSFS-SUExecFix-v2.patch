@@ -1,0 +1,166 @@
+diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
+index af6dd24d..24a836c3 100644
+--- a/kernel/feature/sucompat.c
++++ b/kernel/feature/sucompat.c
+@@ -1,10 +1,13 @@
+ #include "linux/file.h"
++#include "linux/fcntl.h"
+ #include "linux/namei.h"
+ #include <linux/compiler_types.h>
+ #include <linux/preempt.h>
+ #include <linux/printk.h>
+ #include <linux/mm.h>
+ #include <linux/pgtable.h>
++#include <linux/pid.h>
++#include <linux/pid_namespace.h>
+ #include <linux/uaccess.h>
+ #include <asm/current.h>
+ #include <linux/cred.h>
+@@ -12,6 +15,7 @@
+ #include <linux/types.h>
+ #include <linux/version.h>
+ #include <linux/sched/task_stack.h>
++#include <linux/sched/task.h>
+ #include <linux/ptrace.h>
+ #include <linux/namei.h>
+ 
+@@ -45,7 +49,6 @@
+ 
+ static const char sh_path[] = SH_PATH;
+ static const char su_path[] = SU_PATH;
+-static const char ksud_path[] = KSUD_PATH;
+ 
+ DEFINE_STATIC_KEY_TRUE(ksu_su_compat_enabled);
+ 
+@@ -218,13 +221,44 @@ int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *arg
+     return -EINVAL;
+ }
+ 
++static struct file *ksu_open_file_from_init_root(const char *path)
++{
++    struct task_struct *pid1_task;
++    struct pid *pid_struct;
++    struct path init_root;
++    struct file *file;
++    const struct cred *old_cred;
++
++    rcu_read_lock();
++    pid_struct = find_pid_ns(1, &init_pid_ns);
++    pid1_task = pid_struct ? get_pid_task(pid_struct, PIDTYPE_PID) : NULL;
++    rcu_read_unlock();
++    if (!pid1_task)
++        return ERR_PTR(-ESRCH);
++
++    get_fs_root(pid1_task->fs, &init_root);
++    put_task_struct(pid1_task);
++
++    old_cred = override_creds(ksu_cred);
++    file = file_open_root(&init_root, path, O_PATH, 0);
++    revert_creds(old_cred);
++    path_put(&init_root);
++
++    return file;
++}
++
+ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                  void *argv_user, void *envp_user,
+-                 int *__never_use_flags)
++                 int *flags)
+ {
+     struct filename *filename;
++    struct filename *empty_filename;
+     struct user_arg_ptr *argv_ptr = (struct user_arg_ptr *)argv_user;
+     struct ksu_sulog_pending_event *pending_sucompat = NULL;
++    struct file *ksud_file;
++    const struct cred *old_cred;
++    bool shell_fallback = false;
++    int tmp_fd;
+     int ret;
+ 
+     if (unlikely(!filename_ptr))
+@@ -256,15 +290,82 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                                                          (const char __user *const __user *)argv_ptr->ptr.native,
+                                                          GFP_KERNEL);
+ 
+-    memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
++    /*
++     * Open ksud with KernelSU's credentials before applying the app's root
++     * profile.  Replacing the pathname and resolving it later can fail for
++     * Android app/shell mount contexts even though the su compatibility stat
++     * hook is visible to the same process.
++     */
++    tmp_fd = get_unused_fd_flags(O_CLOEXEC);
++    if (tmp_fd < 0) {
++        ret = tmp_fd;
++        pr_err("ksu_handle_execveat_sucompat: alloc tmp fd failed: %d\n", ret);
++        goto out_emit;
++    }
++
++    old_cred = override_creds(ksu_cred);
++    ksud_file = filp_open(KSUD_PATH, O_PATH, 0);
++    revert_creds(old_cred);
++    if (IS_ERR(ksud_file)) {
++        int caller_err = PTR_ERR(ksud_file);
++
++        ksud_file = ksu_open_file_from_init_root(KSUD_PATH);
++        if (IS_ERR(ksud_file)) {
++            int init_err = PTR_ERR(ksud_file);
++
++            old_cred = override_creds(ksu_cred);
++            ksud_file = filp_open(SH_PATH, O_PATH, 0);
++            revert_creds(old_cred);
++            if (IS_ERR(ksud_file)) {
++                ret = PTR_ERR(ksud_file);
++                pr_err("SUExecFix v2: ksud open failed in caller (%d) and init (%d); sh fallback failed: %d\n",
++                       caller_err, init_err, ret);
++                put_unused_fd(tmp_fd);
++                goto out_emit;
++            }
++
++            shell_fallback = true;
++            pr_warn("SUExecFix v2: ksud open failed in caller (%d) and init (%d); using allowed root-shell fallback\n",
++                    caller_err, init_err);
++        } else {
++            pr_info("SUExecFix v2: executing ksud from PID 1 root after caller lookup failed: %d\n",
++                    caller_err);
++        }
++    }
++
++    empty_filename = getname_kernel("");
++    if (IS_ERR(empty_filename)) {
++        ret = PTR_ERR(empty_filename);
++        pr_err("ksu_handle_execveat_sucompat: allocate empty filename failed: %d\n", ret);
++        fput(ksud_file);
++        put_unused_fd(tmp_fd);
++        goto out_emit;
++    }
+ 
+     ret = escape_with_root_profile();
+-    if (ret)
++    if (ret) {
+         pr_err("escape_with_root_profile() failed: %d\n", ret);
++        putname(empty_filename);
++        fput(ksud_file);
++        put_unused_fd(tmp_fd);
++        goto out_emit;
++    }
++
++    fd_install(tmp_fd, ksud_file);
++    putname(filename);
++    *filename_ptr = empty_filename;
++    *fd = tmp_fd;
++    *flags = AT_EMPTY_PATH;
+ 
++    if (shell_fallback)
++        pr_info("SUExecFix v2: root-shell fallback installed for uid %u\n",
++                current_uid().val);
++
++out_emit:
+     ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
+ 
+-    return 0;
++    /* Zero means no installed fd.  The exec core closes this fd on failure. */
++    return ret ? 0 : tmp_fd + 1;
+ }
+ 
+ extern struct static_key_true is_first_zygote;

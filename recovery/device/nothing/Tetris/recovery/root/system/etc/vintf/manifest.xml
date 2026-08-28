@@ -1,0 +1,13 @@
+<!-- Minimal Android 16 framework manifest for recovery servicemanager. -->
+<manifest version="9.0" type="framework">
+    <system-sdk>
+        <version>29</version>
+        <version>30</version>
+        <version>31</version>
+        <version>32</version>
+        <version>33</version>
+        <version>34</version>
+        <version>35</version>
+        <version>36</version>
+    </system-sdk>
+</manifest>

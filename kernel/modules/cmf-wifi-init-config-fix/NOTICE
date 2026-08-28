@@ -1,0 +1,3 @@
+The included wifi.cfg is the 368-byte stock CMF Phone 1 vendor configuration
+with only DbgLevel0 and DbgLevel1 entries appended. No MediaTek executable or
+proprietary kernel module is redistributed.

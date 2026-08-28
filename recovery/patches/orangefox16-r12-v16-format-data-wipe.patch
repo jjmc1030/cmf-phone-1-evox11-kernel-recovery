@@ -1,0 +1,30 @@
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 73a16d99..2058ebc4 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -4957,17 +4957,20 @@ bool TWPartitionManager::Check_Pending_Merges() {
+ 		return false;
+ 	}
+ 
+-	if (!Unmap_Super_Devices()) {
+-		LOGERR("Unable to unmap dynamic partitions.\n");
+-		return false;
+-	}
+-
+ 	auto callback = [&]() -> void {
+ 		double progress;
+ 		sm->GetUpdateState(&progress);
+ 		LOGINFO("waiting for merge to complete: %.2f\n", progress);
+ 	};
+ 
++	/*
++	 * HandleImminentDataWipe() owns the Virtual A/B snapshot transition and
++	 * intentionally allows a wipe immediately when no OTA is pending.  Do not
++	 * tear down every logical partition first: vendor-backed recovery services
++	 * can keep the active vendor mapping busy, and treating that expected busy
++	 * mapping as fatal prevents Wipe_Encryption() from ever reaching mkfs.f2fs.
++	 */
++	LOGINFO("checking virtual A/B snapshot state before data wipe\n");
+ 	LOGINFO("checking for merges\n");
+ 	if (!sm->HandleImminentDataWipe(callback)) {
+ 		LOGERR("Unable to check merge status\n");

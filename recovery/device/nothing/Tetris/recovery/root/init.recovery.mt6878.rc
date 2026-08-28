@@ -1,0 +1,8 @@
+on init
+    setprop sys.usb.configfs 1
+    setprop sys.usb.controller "11201000.usb0"
+    setprop sys.usb.ffs.aio_compat 1
+
+on fs && property:ro.debuggable=0
+    # set charging free due to it wait for USB activation
+    start adbd

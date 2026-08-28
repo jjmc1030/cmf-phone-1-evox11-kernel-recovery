@@ -1,0 +1,91 @@
+diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
+index af6dd24d..96afec33 100644
+--- a/kernel/feature/sucompat.c
++++ b/kernel/feature/sucompat.c
+@@ -45,7 +45,6 @@
+ 
+ static const char sh_path[] = SH_PATH;
+ static const char su_path[] = SU_PATH;
+-static const char ksud_path[] = KSUD_PATH;
+ 
+ DEFINE_STATIC_KEY_TRUE(ksu_su_compat_enabled);
+ 
+@@ -220,11 +219,15 @@ int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *arg
+ 
+ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                  void *argv_user, void *envp_user,
+-                 int *__never_use_flags)
++                 int *flags)
+ {
+     struct filename *filename;
++    struct filename *empty_filename;
+     struct user_arg_ptr *argv_ptr = (struct user_arg_ptr *)argv_user;
+     struct ksu_sulog_pending_event *pending_sucompat = NULL;
++    struct file *ksud_file;
++    const struct cred *old_cred;
++    int tmp_fd;
+     int ret;
+ 
+     if (unlikely(!filename_ptr))
+@@ -256,15 +259,58 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                                                          (const char __user *const __user *)argv_ptr->ptr.native,
+                                                          GFP_KERNEL);
+ 
+-    memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
++    /*
++     * Open ksud with KernelSU's credentials before applying the app's root
++     * profile.  Replacing the pathname and resolving it later can fail for
++     * Android app/shell mount contexts even though the su compatibility stat
++     * hook is visible to the same process.
++     */
++    tmp_fd = get_unused_fd_flags(O_CLOEXEC);
++    if (tmp_fd < 0) {
++        ret = tmp_fd;
++        pr_err("ksu_handle_execveat_sucompat: alloc tmp fd failed: %d\n", ret);
++        goto out_emit;
++    }
++
++    old_cred = override_creds(ksu_cred);
++    ksud_file = filp_open(KSUD_PATH, O_PATH, 0);
++    revert_creds(old_cred);
++    if (IS_ERR(ksud_file)) {
++        ret = PTR_ERR(ksud_file);
++        pr_err("ksu_handle_execveat_sucompat: open ksud failed: %d\n", ret);
++        put_unused_fd(tmp_fd);
++        goto out_emit;
++    }
++
++    empty_filename = getname_kernel("");
++    if (IS_ERR(empty_filename)) {
++        ret = PTR_ERR(empty_filename);
++        pr_err("ksu_handle_execveat_sucompat: allocate empty filename failed: %d\n", ret);
++        fput(ksud_file);
++        put_unused_fd(tmp_fd);
++        goto out_emit;
++    }
+ 
+     ret = escape_with_root_profile();
+-    if (ret)
++    if (ret) {
+         pr_err("escape_with_root_profile() failed: %d\n", ret);
++        putname(empty_filename);
++        fput(ksud_file);
++        put_unused_fd(tmp_fd);
++        goto out_emit;
++    }
++
++    fd_install(tmp_fd, ksud_file);
++    putname(filename);
++    *filename_ptr = empty_filename;
++    *fd = tmp_fd;
++    *flags = AT_EMPTY_PATH;
+ 
++out_emit:
+     ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
+ 
+-    return 0;
++    /* Zero means no installed fd.  The exec core closes this fd on failure. */
++    return ret ? 0 : tmp_fd + 1;
+ }
+ 
+ extern struct static_key_true is_first_zygote;

@@ -1,0 +1,8 @@
+/release-assets/*
+!/release-assets/.gitkeep
+**/orangefox-*-logs-*/
+*.log
+*.tmp
+/recovery/device/nothing/Tetris/prebuilt/
+/recovery/device/nothing/Tetris/bootctrl/boot_region_control.cpp
+/recovery/device/nothing/Tetris/bootctrl/boot_region_control_private.h

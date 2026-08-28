@@ -1,0 +1,54 @@
+# CMF Phone 1 recovery MTP over ConfigFS/FunctionFS.
+#
+# The generic recovery init creates the gadget plus the ADB and fastboot
+# FunctionFS endpoints. TWRP's MTP server uses its own FunctionFS endpoint,
+# so create and mount that endpoint after the generic "fs" actions finish.
+
+on post-fs && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/bcdUSB 0x0210
+    write /config/usb_gadget/g1/os_desc/use 1
+    write /config/usb_gadget/g1/os_desc/b_vendor_code 0x01
+    write /config/usb_gadget/g1/os_desc/qw_sign MSFT100
+    symlink /config/usb_gadget/g1/configs/b.1 /config/usb_gadget/g1/os_desc/b.1
+    mkdir /config/usb_gadget/g1/functions/ffs.mtp
+    mkdir /dev/usb-ffs/mtp 0770 media_rw media_rw
+    mount functionfs mtp /dev/usb-ffs/mtp uid=1024,gid=1024,rmode=0770,fmode=0660
+    setprop sys.usb.mtp.device_type 3
+
+# Detach the gadget before switching functions. The generic rule removes f1;
+# MTP+ADB also uses f2, which must be removed before the next configuration.
+on property:sys.usb.config=none && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/UDC "none"
+    setprop sys.usb.ffs.mtp.ready 0
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    rm /config/usb_gadget/g1/configs/b.1/f3
+
+on property:sys.usb.config=mtp,adb && property:sys.usb.configfs=1
+    start adbd
+
+# TWRP raises sys.usb.ffs.mtp.ready after writing its FunctionFS descriptors.
+# Attach only after both MTP and ADB endpoints are ready, avoiding the race that
+# left MTP absent while ADB continued to work in the previous recovery.
+on property:sys.usb.ffs.mtp.ready=1 && property:sys.usb.ffs.ready=1 && property:sys.usb.config=mtp,adb && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/UDC "none"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/idVendor 0x${ro.recovery.usb.vid}
+    write /config/usb_gadget/g1/idProduct 0x4EE2
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "mtp_adb"
+    symlink /config/usb_gadget/g1/functions/ffs.mtp /config/usb_gadget/g1/configs/b.1/f1
+    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}
+
+# Keep MTP-only mode usable for recovery clients that explicitly request it.
+on property:sys.usb.ffs.mtp.ready=1 && property:sys.usb.config=mtp && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/UDC "none"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/idVendor 0x${ro.recovery.usb.vid}
+    write /config/usb_gadget/g1/idProduct 0x4EE1
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "mtp"
+    symlink /config/usb_gadget/g1/functions/ffs.mtp /config/usb_gadget/g1/configs/b.1/f1
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}

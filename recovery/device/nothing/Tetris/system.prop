@@ -1,0 +1,17 @@
+# Dynamic Partitions
+ro.boot.dynamic_partitions=true
+
+# Fstab
+ro.postinstall.fstab.prefix=/system
+
+# USB MTP
+ro.sys.usb.storage.type=mtp
+
+# Evolution X vendor Trustonic configuration. These are normally supplied by
+# vendor/build.prop, but recovery starts the crypto HALs before that property
+# file can be imported.
+ro.hardware.gatekeeper=trustonic
+ro.vendor.mtk_trustonic_tee_support=1
+
+# Misc
+ro.vendor.mediatek.platform=MT6878

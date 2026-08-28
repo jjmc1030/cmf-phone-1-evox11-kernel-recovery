@@ -1,0 +1,78 @@
+diff --git a/partition.cpp b/partition.cpp
+index 5185200f..9f8f917c 100644
+--- a/partition.cpp
++++ b/partition.cpp
+@@ -37,6 +37,7 @@
+ #include <zlib.h>
+ #include <sstream>
+ #include <android-base/properties.h>
++#include <fs_mgr_dm_linear.h>
+ #include <libsnapshot/snapshot.h>
+ 
+ #include "cutils/properties.h"
+@@ -2267,12 +2268,62 @@ bool TWPartition::Wipe_Encryption() {
+ 	}
+ 
+ #ifdef TW_INCLUDE_CRYPTO
++	/*
++	 * The CMF Phone 1 recovery starts a ROM-matched Trustonic stack so that
++	 * metadata-encrypted userdata can be decrypted. mcDriverDaemon keeps its
++	 * secure storage open below /data/vendor/mcRegistry. A lazy unmount can
++	 * therefore succeed while the underlying dm-default-key device remains
++	 * open, causing make_f2fs to abort with "In use by the system".
++	 *
++	 * Stop the recovery-only crypto stack after all pre-wipe/snapshot checks
++	 * have passed. Other devices do not expose twrp.trustonic.setup, so this is
++	 * a no-op outside the device-specific recovery configuration.
++	 */
++	if (!android::base::GetProperty("init.svc.twrp.trustonic.setup", "").empty()) {
++		LOGINFO("Stopping recovery crypto services before formatting userdata\n");
++		android::base::SetProperty("ctl.stop", "keystore2");
++		android::base::SetProperty("ctl.stop", "twrp.trustonic.setup");
++
++		int wait_count = 0;
++		while (wait_count < 50) {
++			const std::string keystore_state =
++				android::base::GetProperty("init.svc.keystore2", "stopped");
++			const std::string trustonic_state =
++				android::base::GetProperty("init.svc.twrp.trustonic.setup", "stopped");
++			if (keystore_state != "running" && keystore_state != "restarting" &&
++				trustonic_state != "running" && trustonic_state != "restarting")
++				break;
++			usleep(100000);
++			++wait_count;
++		}
++
++		if (android::base::GetProperty("init.svc.keystore2", "stopped") == "running" ||
++			android::base::GetProperty("init.svc.twrp.trustonic.setup", "stopped") == "running") {
++			LOGERR("Recovery crypto services did not stop; refusing unsafe userdata format\n");
++			return false;
++		}
++		android::base::SetProperty("recovery.trustonic.ready", "0");
++	}
++
+ 	if (!UnMount(true))
+ 		return false;
+ 	if (Is_Decrypted && !Decrypted_Block_Device.empty()) {
+-//		if (delete_crypto_blk_dev((char*)("userdata")) != 0) {
+-//			LOGERR("Error deleting crypto block device, continuing anyway.\n");
+-//		}
++		const std::string decrypted_block_device = Decrypted_Block_Device;
++		const size_t slash = decrypted_block_device.find_last_of('/');
++		const std::string mapper_name =
++			slash == std::string::npos ? decrypted_block_device : decrypted_block_device.substr(slash + 1);
++
++		if (decrypted_block_device.rfind("/dev/block/mapper/", 0) == 0 &&
++			TWFunc::Path_Exists(decrypted_block_device)) {
++			LOGINFO("Removing metadata-encryption mapping '%s' before formatting userdata\n",
++				mapper_name.c_str());
++			if (!android::fs_mgr::DestroyLogicalPartition(mapper_name)) {
++				LOGERR("Unable to remove metadata-encryption mapping '%s'; refusing unsafe userdata format\n",
++					mapper_name.c_str());
++				return false;
++			}
++			usleep(100000);
++		}
+ 	}
+ #endif
+ 	Has_Data_Media = false;

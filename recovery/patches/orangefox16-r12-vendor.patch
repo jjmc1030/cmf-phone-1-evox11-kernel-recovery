@@ -1,0 +1,579 @@
+diff --git a/Files/changelog.txt b/Files/changelog.txt
+index 1cc4684..382aa2c 100644
+--- a/Files/changelog.txt
++++ b/Files/changelog.txt
+@@ -1,3 +1,13 @@
++OrangeFox Recovery R12.0 Changelog
++-----------------------------------
++
++== R12.0 ==
++- Interface design overhaul, inspired by Material Expressive
++- New icons, which are renderring as svg
++- Brand new OrangeFox themes: Fox white and Fox dark.
++- Gesture navigation is now enabled by default
++- New font: Inter, which is now the default font
++- Implement an svg engine
+ 
+ 
+ OrangeFox Recovery R11.3 Changelog
+diff --git a/Files/credits.txt b/Files/credits.txt
+index d1f8658..3a68e28 100644
+--- a/Files/credits.txt
++++ b/Files/credits.txt
+@@ -6,6 +6,11 @@ OrangeFox Recovery Credits
+ * TWRP Team
+ * The Posy - for cursor
+ 
++== R12 interface refresh ==
++* fordownloads
++* Ctapchuk
++* MrYacha
++
+ == For donating ==
+ * GitLab.com
+ * JetBrains
+diff --git a/Files/fox.bashrc b/Files/fox.bashrc
+index 184ec96..2370e10 100644
+--- a/Files/fox.bashrc
++++ b/Files/fox.bashrc
+@@ -1,6 +1,31 @@
+ #
+-# sample system-wide bashrc file for OrangeFox
++# 	sample system-wide bashrc file for OrangeFox
+ #
++#	This file is part of the OrangeFox Recovery Project
++# 	Copyright (C) 2018-2026 The OrangeFox Recovery Project
++#
++#	OrangeFox is free software: you can redistribute it and/or modify
++#	it under the terms of the GNU General Public License as published by
++#	the Free Software Foundation, either version 3 of the License, or
++#	any later version.
++#
++#	OrangeFox is distributed in the hope that it will be useful,
++#	but WITHOUT ANY WARRANTY; without even the implied warranty of
++#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++#	GNU General Public License for more details.
++#
++# 	This software is released under GPL version 3 or any later version.
++#	See <http://www.gnu.org/licenses/>.
++#
++# 	Please maintain this if you use this script or any part of it
++#
++
++# HOME
++HOME=$(getprop "ro.orangefox.home")
++[ -z "$HOME" ] && HOME=/sdcard/Fox
++[ ! -d $HOME ] && mkdir -p -m 0777 $HOME
++[ ! -d $HOME ] && HOME=/tmp
++export HOME
+ 
+ # shell
+ export PS1='\s-\v \w > '
+@@ -15,6 +40,8 @@ alias del="rm -i"
+ alias ren="mv -i"
+ alias copy="cp -i"
+ alias diskfree="df -Ph"
++alias path="echo $PATH"
++alias ver="echo -n 'OrangeFox ' && echo -n '- ' && echo -n $(getprop ro.orangefox.type) && echo -n ' - ' && getprop ro.orangefox.release.version && cat /proc/version"
+ #
+ 
+ # go to a neutral location
+diff --git a/FoxExtras/FFiles/OF_backup_settings/OF_backup_settings.zip b/FoxExtras/FFiles/OF_backup_settings/OF_backup_settings.zip
+index ac0b0aec68341bbc0482351077e15fd628f9e23e..331d904dd178e89e0d0a4887d960422b50aac988 100644
+GIT binary patch
+delta 4745
+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
+
+delta 4647
+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
+XGNfxOe+<;?bHn^|){OrAJcRxqmS+Y-
+
+diff --git a/FoxExtras/sbin/foxstart.sh b/FoxExtras/sbin/foxstart.sh
+index 506fb19..ea4dab4 100755
+--- a/FoxExtras/sbin/foxstart.sh
++++ b/FoxExtras/sbin/foxstart.sh
+@@ -3,7 +3,7 @@
+ # 	Custom script for OrangeFox Recovery
+ #
+ #	This file is part of the OrangeFox Recovery Project
+-# 	Copyright (C) 2018-2025 The OrangeFox Recovery Project
++# 	Copyright (C) 2018-2026 The OrangeFox Recovery Project
+ #
+ #	OrangeFox is free software: you can redistribute it and/or modify
+ #	it under the terms of the GNU General Public License as published by
+@@ -22,7 +22,7 @@
+ #
+ #
+ # * Author: DarthJabba9, Ctapchuk
+-# * Date:   20251120
++# * Date:   20260324
+ # * Identify some ROM features and hardware components
+ # * Do some other sundry stuff
+ #
+@@ -523,12 +523,15 @@ local fox_cfg="$ETC_DIR/fox.cfg"
+ 
+    $SETPROP ro.orangefox.home "$fox_home"
+    $SETPROP ro.orangefox.settings "$fox_settings"
+-   
++
+    # if someone is still using old recovery sources
+-   ln -s $CFG /tmp/orangefox.cfg
++   cp $CFG /tmp/orangefox.cfg
+ 
+    # bashrc
+-   ln -sf /system/etc/bash/bashrc /.bashrc
++   local rc=$ETC_DIR/bash/bashrc
++   [ ! -f $rc ] && rc=$ETC_DIR/bashrc
++   [ ! -f $rc ] && rc=$ETC_DIR/bash.bashrc
++   [ -f $rc ] && cp $rc /.bashrc
+ }
+ 
+ # try to get display panel information
+diff --git a/OrangeFox_A16.sh b/OrangeFox_A16.sh
+index 8fbf103..c9202f9 100755
+--- a/OrangeFox_A16.sh
++++ b/OrangeFox_A16.sh
+@@ -19,7 +19,7 @@
+ # 	Please maintain this if you use this script or any part of it
+ #
+ # ******************************************************************************
+-# 26 January 2026
++# 15 April 2026
+ #
+ # *** This script is for the OrangeFox Android 14.1 manifest ***
+ #
+@@ -34,7 +34,7 @@
+ # other methods for patching recovery/boot images are no longer supported
+ export OF_USE_MAGISKBOOT_FOR_ALL_PATCHES=1
+ export OF_USE_MAGISKBOOT=1
+-export FOX_INTERNAL_RELEASE=R11.3
++export FOX_INTERNAL_RELEASE=R12.0
+ 
+ # device name
+ FOX_DEVICE=$(cut -d'_' -f2 <<<$TARGET_PRODUCT)
+@@ -728,6 +728,12 @@ local TDT=$(date "+%d %B %Y")
+      sed -i -e "s|^FOX_MISCELLANEOUS_ROOT_DIRECTORY=.*|FOX_MISCELLANEOUS_ROOT_DIRECTORY=\"$FOX_MISCELLANEOUS_ROOT_DIRECTORY\"|" $F
+   fi
+ 
++  # save settings root
++  if [ -n "$FOX_SETTINGS_ROOT_DIRECTORY" ]; then
++     echo -e "${RED}-- This build will use $FOX_SETTINGS_ROOT_DIRECTORY for its settings ... ${NC}"
++     sed -i -e "s|^FOX_SETTINGS_ROOT_DIRECTORY=.*|FOX_SETTINGS_ROOT_DIRECTORY=\"$FOX_SETTINGS_ROOT_DIRECTORY\"|" $F
++  fi
++
+   # disable auto-reboot after installing OrangeFox?
+   if [ "$FOX_INSTALLER_DISABLE_AUTOREBOOT" = "1" ]; then
+      echo -e "${RED}-- This build will skip all OrangeFox patches ... ${NC}"
+@@ -971,6 +977,13 @@ local upx_bin=$FOX_VENDOR_PATH/tools/upx;
+ 			bins=$(ls ./);
+ 			for i in $bins
+ 			do
++				# PID 1 re-executes itself after entering the vendor_init
++				# SELinux domain. UPX needs execmem while unpacking, which that
++				# domain intentionally denies. Symlinks such as ueventd and
++				# watchdogd may resolve back to init, so skip those as well.
++				if [ "$i" = "init" -o -L "$i" ]; then
++					continue;
++				fi
+ 				size=$(filesize $i);
+ 				if [ $size -gt $min -a "$(is_arm $i)" = "1" ]; then
+ 					echo -e "${WHITEONRED}-- Compressing \"$i\" with upx ... ${NC}";
+diff --git a/installer/META-INF/com/google/android/update-binary b/installer/META-INF/com/google/android/update-binary
+index d361c23..abb7087 100644
+--- a/installer/META-INF/com/google/android/update-binary
++++ b/installer/META-INF/com/google/android/update-binary
+@@ -3,13 +3,13 @@
+ # ******************************************************
+ # Description: 	Installer script for OrangeFox Recovery
+ # SPDX-License-Identifier: GPL-3.0-or-later
+-# Copyright (C) 2018-2025 The OrangeFox Recovery Project
++# Copyright (C) 2018-2026 The OrangeFox Recovery Project
+ # Author: 	DarthJabba9, Ctapchuk
+ # Date: 	TODAY
+ # ******************************************************
+ 
+ # last_modified
+-MOD_DATE="20251031"
++MOD_DATE="20260415"
+ 
+ # whether to print extra debug messages
+ FOX_INSTALLER_DEBUG_MODE=0
+@@ -103,6 +103,9 @@ FOX_VANILLA_BUILD=0
+ # whether we have been given a fixed OrangeFox stuff directory
+ FOX_MISCELLANEOUS_ROOT_DIRECTORY=""
+ 
++# whether we've been given a new settings root
++FOX_SETTINGS_ROOT_DIRECTORY=""
++
+ # whether to disable auto-reboot after installing OrangeFox
+ FOX_INSTALLER_DISABLE_AUTOREBOOT=0
+ 
+@@ -305,7 +308,7 @@ CheckRequirements() {
+ 
+ # do we have a virtual A/B device?
+ is_VAB() {
+-	if [ "$FOX_VIRTUAL_AB_DEVICE" = "1" -o "$(getprop ro.orangefox.virtual_ab)" = "1" -o "$(getprop ro.virtual_ab.enabled)" = "true" ]; then
++	if [ "$FOX_VIRTUAL_AB_DEVICE" = "1" -o "$($GETPROP ro.orangefox.virtual_ab)" = "1" -o "$($GETPROP ro.virtual_ab.enabled)" = "true" ]; then
+ 		echo "1"
+ 	else
+ 		echo "0"
+@@ -824,15 +827,32 @@ local PART=$(readlink $RECOVERY_PARTITION)
+ }
+ 
+ # reset settings to default
+-Reset_Settings() {
++Legacy_Reset_Settings() {
+ local F="$1"
+ 	[ -z "$F" ] && F=/sdcard
+ 	local FOX=$F/Fox
+-	ui_print "- Removing old OrangeFox configuration files ..."
++	ui_print "- Removing any legacy OrangeFox configuration files ..."
+ 	rm -rf $FOX/.bin.
+ 	rm -rf $FOX/.theme
+ 	rm -rf $FOX/.navbar
+ 	rm -f $FOX/.fox*
++}
++
++Reset_Settings() {
++local FOX_HOME=$($GETPROP "ro.orangefox.home")
++local FOX_SETTINGS=$($GETPROP "ro.orangefox.settings")
++	[ -z "$FOX_HOME" ] && FOX_HOME=/sdcard/Fox
++	[ -z "$FOX_SETTINGS" ] && FOX_SETTINGS=/sdcard/Fox
++
++	ui_print "- Removing any old OrangeFox configuration files ..."
++	rm -rf $FOX_HOME/.bin.
++	rm -f $FOX_HOME/.bash*
++	rm -f $FOX_HOME/fox*
++	rm -f $FOX_HOME/aromafm.cfg
++	rm -rf $FOX_SETTINGS/.theme
++	rm -rf $FOX_SETTINGS/.navbar
++	rm -f $FOX_SETTINGS/.fox*
++
+ 	if [ "$PERSIST_PATH" != "ERROR" -a -d $PERSIST_PATH ]; then
+ 	   	[ "$BOOTMODE" != "true" ] && mount_part $PERSIST_PATH
+ 	   	rm -f $PERSIST_PATH/.fsec*
+@@ -841,6 +861,33 @@ local F="$1"
+ 	else
+ 		[ "$PERSIST_PATH" = "ERROR" ] && ui_print "- Some old settings might remain."
+ 	fi
++
++	# remove any lingering legacy settings
++	Legacy_Reset_Settings;
++
++	# other contingencies (eg, installing with R11, or with another recovery)
++	local F=""
++	if [ -n "$FOX_SETTINGS_ROOT_DIRECTORY" ]; then
++		F=$FOX_SETTINGS_ROOT_DIRECTORY"/Fox"
++		if [ "$F" != "$FOX_SETTINGS" ]; then
++			FOX_SETTINGS=$F
++			rm -rf $FOX_SETTINGS/.theme
++			rm -rf $FOX_SETTINGS/.navbar
++			rm -f $FOX_SETTINGS/.fox*
++		fi
++	fi
++
++	if [ -n "$FOX_MISCELLANEOUS_ROOT_DIRECTORY" ]; then
++		F=$FOX_MISCELLANEOUS_ROOT_DIRECTORY"/Fox"
++		if [ "$F" != "$FOX_HOME" ]; then
++			FOX_HOME=$F
++			rm -rf $FOX_HOME/.bin.
++			rm -f $FOX_HOME/.bash*
++			rm -f $FOX_HOME/fox*
++			rm -f $FOX_HOME/aromafm.cfg
++		fi
++	fi
++	#
+ }
+ 
+ # install the OrangeFox extras to internal SD
+@@ -884,6 +931,8 @@ Install_OrangeFox_Extras_To_sdcard() {
+ 	   rm -rf "$internal_SD/Fox/FoxFiles"
+    	   rm -f "$internal_SD/Fox/.wolfs"
+    	   package_extract_dir "sdcard" "$internal_SD"
++	   chcon -R "u:object_r:media_rw_data_file:s0" "$internal_SD/Fox"
++	   chown -R "media_rw:media_rw" "$internal_SD/Fox"
+    	}
+ }
+ 
+diff --git a/installer/sdcard/Fox/fox.bashrc b/installer/sdcard/Fox/fox.bashrc
+index 4a59cc5..2695dae 100644
+--- a/installer/sdcard/Fox/fox.bashrc
++++ b/installer/sdcard/Fox/fox.bashrc
+@@ -1,14 +1,34 @@
+ #
+-# sample .bashrc file for OrangeFox
++#	sample .bashrc file for OrangeFox
+ #
++#	This file is part of the OrangeFox Recovery Project
++# 	Copyright (C) 2018-2026 The OrangeFox Recovery Project
++#
++#	OrangeFox is free software: you can redistribute it and/or modify
++#	it under the terms of the GNU General Public License as published by
++#	the Free Software Foundation, either version 3 of the License, or
++#	any later version.
++#
++#	OrangeFox is distributed in the hope that it will be useful,
++#	but WITHOUT ANY WARRANTY; without even the implied warranty of
++#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++#	GNU General Public License for more details.
++#
++# 	This software is released under GPL version 3 or any later version.
++#	See <http://www.gnu.org/licenses/>.
++#
++# 	Please maintain this if you use this script or any part of it
++#
++
+ # HOME
+-export HOME=$(getprop "ro.orangefox.home")
+-[ ! -n $HOME ] && export HOME=/sdcard/Fox
+-[ ! -d $HOME ] && mkdir -p $HOME
+-[ ! -d $HOME ] && export HOME=/tmp
++HOME=$(getprop "ro.orangefox.home")
++[ -z "$HOME" ] && HOME=/sdcard/Fox
++[ ! -d $HOME ] && mkdir -p -m 0777 $HOME
++[ ! -d $HOME ] && HOME=/tmp
++export HOME
+ 
+ # shell
+-export SHELL=/sbin/bash
++export SHELL=$(which bash)
+ export HISTFILE=$HOME/.bash_history
+ export PS1='\s-\v \w > '
+ 
+diff --git a/orangefox_build_vars.txt b/orangefox_build_vars.txt
+index b41dfd3..8a0b4b0 100644
+--- a/orangefox_build_vars.txt
++++ b/orangefox_build_vars.txt
+@@ -8,7 +8,7 @@
+ # The build vars beginning with "OF_" can be exported in vendorsetup.sh, or can be declared in a device tree make (ie, ".mk") file
+ #
+ # Copyright (C) 2019-2026 OrangeFox Recovery Project
+-# Date: 26 January 2026
++# Date: 17 April 2026
+ #
+ # -----------------------------------
+ #
+@@ -754,9 +754,9 @@
+ -
+ - Examples:
+ -
+--  "export FOX_SETTINGS_ROOT_DIRECTORY=/sdcard/PRIVATE"
++-  "export FOX_MISCELLANEOUS_ROOT_DIRECTORY=/sdcard/PRIVATE"
+ -
+--  "export FOX_SETTINGS_ROOT_DIRECTORY=/sdcard1/MyDev"
++-  "export FOX_MISCELLANEOUS_ROOT_DIRECTORY=/sdcard1/MyDev"
+ -
+ -
+ - This is a HIGHLY EXPERIMENTAL feature, which may have bugs; use with GREAT caution, and with lots of testing
+@@ -925,12 +925,6 @@
+    -    otherwise the recovery might not boot at all (eg, blank screen), even if it builds successfully
+    - default = 0
+ #
+-"OF_USE_AIDL_BOOT_CONTROL" [NEW]
+-   - this is for A/B devices only
+-   - set this to 1 if your device uses aidl (as opposed to hidl) to handle boot control, particularly changing slots
+-   - this may help in situations where your build cannot successfully change slots from the OrangeFox UI
+-   - default = 0
+-#
+ "OF_MASK_GET_FOLDER_SIZE_READ_ERRORS" [NEW]
+    - set this to 1 to cause certain read errors - when running Get_File_Size() - to be logged in the log file, rather than the recovery console
+    - this is not recommended, because the presence of the errors indicates a problem; it is best to find and cause and to fix it
+@@ -948,4 +942,20 @@
+    - if you cannot start the wlan service automatically "Start WLAN" button is linked to /system/bin/wlan_start
+    - See for reference: https://github.com/koaaN/android_device_oneplus_infiniti-orangefox/blob/fox_16.0/recovery/root/system/bin/wlan_start
+    - default = 0
++#
++"OF_DONT_SUBSTITUTE_PERMISSIONS" [NEW] [! EXPERIMENTAL !]
++   - Set this to 1 to opt out of substituting permissions/selinux contexts for OrangeFox-related files/folders, as required by Android 16 QPR2's access strictness
++   - If set to 1, OrangeFox leaves permissions/contexts alone, as normal. This is likely to cause restricted access (in Android 16 QPR2) to files/folders created
++   - by OrangeFox in the internal storage, because they will most likely be owned by root, and their selinux contexts would not be "media_rw".
++   - So, it is best to stay away from this setting, unless the subtituted permissions are causing problems.
++   - default = 0
++#
++"OF_VAB_ORS_WIPE_DATA_IS_FORMAT" [NEW] [! EXPERIMENTAL !]
++   - Set this to 1 to respond to ORS '--wipe-data' instructions in the expected manner, by formatting data.
++   - This is what AOSP recoveries do, and this (a 'factory reset') is what the system update_engine expects. Currently, we just wipe data, instead of formatting it.
++   - For virtual A/B devices, this often leaves the device a permanent 'merge' status after flashing a ROM (the 'unmerged snapshot' problem), causing a brick.
++   - This build var instructs the recovery to respond as expected, rather than as twrp has always done.
++   - This is only relevant to Virtual A/B devices. Do NOT try to use it for non-virtual A/B devices - you will only get a build error.
++   - default = 0
++#
+ # -----------------------------------

@@ -1,0 +1,194 @@
+diff --git a/data.cpp b/data.cpp
+index 1b322684..6337d8b2 100644
+--- a/data.cpp
++++ b/data.cpp
+@@ -656,6 +656,9 @@ int DataManager::ShowProgress(float Portion, const float Seconds)
+ void DataManager::update_tz_environment_variables(void)
+ {
+ 	string TZ = GetStrValue(TW_TIME_ZONE_VAR);
++#ifdef OF_FORCE_TIMEZONE
++	TZ = OF_FORCE_TIMEZONE;
++#endif
+ 	setenv("TZ", TZ.c_str(), 1);
+ 	tzset();
+ 	property_set("persist.sys.timezone", TZ.c_str());
+@@ -1838,4 +1841,3 @@ void DataManager::Leds(bool enable)
+     }
+ }
+ #endif
+-
+diff --git a/orangefox.mk b/orangefox.mk
+index ecc586df..1dfb1c6c 100644
+--- a/orangefox.mk
++++ b/orangefox.mk
+@@ -567,6 +567,12 @@ else
+     LOCAL_CFLAGS += -DOF_DEFAULT_TIMEZONE='"CET-1;CEST,M3.5.0,M10.5.0"'
+ endif
+ 
++# Some devices keep OrangeFox settings outside userdata. Allow the device tree
++# to override a stale saved timezone on every recovery boot.
++ifneq ($(OF_FORCE_TIMEZONE),)
++    LOCAL_CFLAGS += -DOF_FORCE_TIMEZONE='"$(OF_FORCE_TIMEZONE)"'
++endif
++
+ # support fs compression (requires kernel support and appropriate fstab flags)
+ ifeq ($(TW_ENABLE_FS_COMPRESSION),true)
+   OF_ENABLE_FS_COMPRESSION := 1
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 9671c1d4..e2d91c3a 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -687,12 +687,12 @@ void TWPartitionManager::Decrypt_Data() {
+ 		// abandoning metadata decryption at boot.
+ 		int trustonic_wait = 0;
+ 		while (android::base::GetProperty("recovery.trustonic.ready", "0") != "1" &&
+-		       trustonic_wait < 200) {
++		       trustonic_wait < 150) {
+ 			usleep(100000);
+ 			++trustonic_wait;
+ 		}
+ 		if (android::base::GetProperty("recovery.trustonic.ready", "0") != "1") {
+-			LOGINFO("Trustonic crypto stack did not become ready after 20 seconds; deferring metadata decryption\n");
++			LOGINFO("Trustonic crypto stack did not stabilize after 15 seconds; skipping boot-time metadata decryption\n");
+ 			return;
+ 		}
+ 		TWPartition* Key_Directory_Partition = Find_Partition_By_Path(Decrypt_Data->Key_Directory);
+@@ -708,21 +708,16 @@ void TWPartitionManager::Decrypt_Data() {
+ 			// The readiness property requires all crypto services to remain
+ 			// stable, but allow a short retry window for Binder registration.
+ 			bool metadata_decrypted = false;
+-			for (int attempt = 0; attempt < 20 && !metadata_decrypted; ++attempt) {
+-				LOGINFO("Starting metadata decryption attempt %d/20\n", attempt + 1);
++			for (int attempt = 0; attempt < 1 && !metadata_decrypted; ++attempt) {
++				LOGINFO("Starting metadata decryption attempt %d/1\n", attempt + 1);
+ 				metadata_decrypted = android::vold::fscrypt_mount_metadata_encrypted(
+ 					Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point,
+ 					false, false, Decrypt_Data->Current_File_System, false,
+ 					user_devices, device_aliased, 0,
+ 					TWFunc::Path_Exists("/etc/recovery.fstab") ? "/etc/recovery.fstab" :
+ 					(TWFunc::Path_Exists(additional_fstab) ? additional_fstab : ""));
+-				LOGINFO("Metadata decryption attempt %d/20 returned %s\n",
++				LOGINFO("Metadata decryption attempt %d/1 returned %s\n",
+ 					attempt + 1, metadata_decrypted ? "success" : "failure");
+-				if (!metadata_decrypted && attempt + 1 < 20) {
+-					if (attempt == 0 || (attempt + 1) % 10 == 0)
+-						LOGINFO("Waiting for KeyMint before retrying metadata decryption (attempt %d/20)\n", attempt + 1);
+-					usleep(500000);
+-				}
+ 			}
+ 			if (metadata_decrypted) {
+ 				std::string crypto_blkdev = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "error");
+@@ -2389,14 +2384,25 @@ int TWPartitionManager::Decrypt_Device(string Password, int user_id) {
+ 		// has produced the dm-default-key mapping before attempting FBE user
+ 		// credential decryption.
+ 		TWPartition* data_partition = Find_Partition_By_Path("/data");
+-		if (data_partition && data_partition->Is_Encrypted && !data_partition->Is_Decrypted) {
++		std::string metadata_block = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "");
++		bool metadata_ready = !metadata_block.empty() && metadata_block != "error" &&
++			TWFunc::Path_Exists(metadata_block);
++		if (data_partition && data_partition->Is_Encrypted && !metadata_ready) {
+ 			LOGINFO("Metadata is not decrypted yet; retrying before FBE user decryption\n");
+ 			Decrypt_Data();
+-			if (!data_partition->Is_Decrypted) {
++			metadata_block = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "");
++			metadata_ready = !metadata_block.empty() && metadata_block != "error" &&
++				TWFunc::Path_Exists(metadata_block);
++			if (!metadata_ready) {
+ 				LOGERR("Metadata decryption is still unavailable; cannot decrypt FBE user %d\n", user_id);
+ 				return -1;
+ 			}
+ 		}
++		if (data_partition && metadata_ready) {
++			data_partition->Decrypted_Block_Device = metadata_block;
++			LOGINFO("Using existing metadata-decrypted data block device '%s' for FBE user %d\n",
++				metadata_block.c_str(), user_id);
++		}
+ 
+ 		if (!Mount_By_Path("/data", true)) // /data has to be mounted for FBE
+ 			return -1;
+diff --git a/prebuilt/Android.mk b/prebuilt/Android.mk
+index e5c69527..0b1caa62 100644
+--- a/prebuilt/Android.mk
++++ b/prebuilt/Android.mk
+@@ -527,8 +527,9 @@ LOCAL_POST_INSTALL_CMD += \
+     cp $(TARGET_OUT_ETC)/selinux/plat_hwservice_contexts $(TARGET_RECOVERY_ROOT_OUT)/system/etc/selinux/plat_hwservice_contexts && \
+     cp $(TARGET_OUT_VENDOR_ETC)/selinux/vndservice_contexts $(TARGET_RECOVERY_ROOT_OUT)/vendor/etc/selinux/vndservice_contexts && \
+     cp $(TARGET_OUT_VENDOR_ETC)/selinux/vendor_hwservice_contexts $(TARGET_RECOVERY_ROOT_OUT)/vendor/etc/selinux/vendor_hwservice_contexts && \
+-    cp $(TARGET_OUT_ETC)/selinux/plat_keystore2_key_contexts $(TARGET_RECOVERY_ROOT_OUT)/system/etc/selinux/plat_keystore2_key_contexts
+-#    cp $(TARGET_OUT_ETC)/task_profiles.json $(TARGET_RECOVERY_ROOT_OUT)/system/etc/task_profiles/task_profiles_30.json
++    cp $(TARGET_OUT_ETC)/selinux/plat_keystore2_key_contexts $(TARGET_RECOVERY_ROOT_OUT)/system/etc/selinux/plat_keystore2_key_contexts && \
++    cp $(TARGET_OUT_ETC)/task_profiles.json $(TARGET_RECOVERY_ROOT_OUT)/system/etc/task_profiles.json && \
++    rm -f $(TARGET_RECOVERY_ROOT_OUT)/system/etc/vintf/manifest/android.hardware.health-service.example_recovery.xml
+ 
+     ifeq ($(TARGET_USES_MKE2FS), true)
+         LOCAL_POST_INSTALL_CMD += \
+diff --git a/twrp-functions.cpp b/twrp-functions.cpp
+index 34048232..0b75ccab 100755
+--- a/twrp-functions.cpp
++++ b/twrp-functions.cpp
+@@ -942,6 +942,7 @@ void TWFunc::GUI_Operation_Text(string Read_Value, string Partition_Name,
+ void TWFunc::Copy_Log(string Source, string Destination) {
+ 	int logPipe[2];
+ 	int pigz_pid;
++	int pigz_status;
+ 	int destination_fd;
+ 	std::string destLogBuffer;
+ 
+@@ -980,9 +981,16 @@ void TWFunc::Copy_Log(string Source, string Destination) {
+ 
+ 	if (pipe(logPipe) < 0) {
+ 		LOGINFO("Unable to open pipe to write to persistent log file: %s\n", Destination.c_str());
++		return;
+ 	}
+ 
+ 	destination_fd = open(Destination.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
++	if (destination_fd < 0) {
++		LOGINFO("Unable to open persistent log file: %s\n", Destination.c_str());
++		close(logPipe[0]);
++		close(logPipe[1]);
++		return;
++	}
+ 
+ 	pigz_pid = fork();
+ 	if (pigz_pid < 0) {
+@@ -990,6 +998,7 @@ void TWFunc::Copy_Log(string Source, string Destination) {
+ 		close(destination_fd);
+ 		close(logPipe[0]);
+ 		close(logPipe[1]);
++		return;
+ 	} else if (pigz_pid == 0) {
+ 		close(logPipe[1]);
+ 		dup2(logPipe[0], fileno(stdin));
+@@ -1000,20 +1009,25 @@ void TWFunc::Copy_Log(string Source, string Destination) {
+ 			_exit(-1);
+ 		}
+ 	} else {
++		bool write_failed = false;
+ 		close(logPipe[0]);
+ 		if (write(logPipe[1], destLogBuffer.c_str(), destLogBuffer.size()) < 0) {
+ 			LOGINFO("Unable to append to persistent log: %s\n", Destination.c_str());
+-			close(logPipe[1]);
+-			close(destination_fd);
+-			return;
++			write_failed = true;
+ 		}
+-		if (write(logPipe[1], srcLogBuffer.c_str(), srcLogBuffer.size()) < 0) {
++		if (!write_failed &&
++		    write(logPipe[1], srcLogBuffer.c_str(), srcLogBuffer.size()) < 0) {
+ 			LOGINFO("Unable to append to persistent log: %s\n", Destination.c_str());
+-			close(logPipe[1]);
+-			close(destination_fd);
+-			return;
++			write_failed = true;
+ 		}
+ 		close(logPipe[1]);
++		close(destination_fd);
++
++		// Copy_Log runs during startup and shutdown. Reap pigz here so each
++		// invocation cannot leave a defunct child owned by the recovery process.
++		if (Wait_For_Child(pigz_pid, &pigz_status, "pigz", false) != 0)
++			LOGINFO("Unable to finish compressing persistent log: %s\n", Destination.c_str());
++		return;
+ 	}
+ 	close(destination_fd);
+ }

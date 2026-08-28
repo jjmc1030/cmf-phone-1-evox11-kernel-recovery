@@ -1,0 +1,20 @@
+diff --git a/health/aidl/default/Android.bp b/health/aidl/default/Android.bp
+index cc5d0a0..77e6199 100644
+--- a/health/aidl/default/Android.bp
++++ b/health/aidl/default/Android.bp
+@@ -134,7 +134,6 @@ cc_defaults {
+ cc_defaults {
+     name: "android.hardware.health-service.example-defaults",
+     relative_install_path: "hw",
+-    vintf_fragments: ["android.hardware.health-service.example.xml"],
+     defaults: [
+         "libhealth_aidl_impl_user",
+     ],
+@@ -148,6 +147,7 @@ cc_binary {
+     name: "android.hardware.health-service.example",
+     vendor: true,
+     defaults: ["android.hardware.health-service.example-defaults"],
++    vintf_fragments: ["android.hardware.health-service.example.xml"],
+     init_rc: ["android.hardware.health-service.example.rc"],
+     overrides: ["charger"],
+ }
