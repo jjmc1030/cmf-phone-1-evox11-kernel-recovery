@@ -40,6 +40,10 @@ validated, but the irreversible format itself was not run during final testing.
 Restricted MediaTek source and private device logs are not published. See
 `recovery/device/nothing/Tetris/EXCLUDED_INPUTS.md` and `LICENSES.md`.
 
+The complete modified kernel source snapshot, including the vendored KernelSU
+33252 kernel code, is published separately at
+<https://github.com/jjmc1030/cmf-phone-1-evox11-kernel-source>.
+
 ## Kernel build and installation
 
 Rebuild the final kernel with:
