@@ -1,77 +1,60 @@
 # Compatibility and support matrix
 
-## What was actually tested
+Compatibility is limited to the exact builds below. ROM name and Android
+version alone are not enough for safe `boot` or `vendor_boot` reuse.
 
-The release was tested on one CMF Phone 1 (`Tetris` / A015) running the supplied
-Evolution X 11.10 GApps Android 16 build and its matching firmware. “Supported”
-below means this exact combination, not every build carrying the same ROM name.
+| Target | Kernel | OrangeFox | Status |
+| --- | --- | --- | --- |
+| Evolution X 11.10 GApps build 2447 | v5 GApps image | v28 GApps image | ROM-matched release |
+| Evolution X 11.10 Vanilla build 2446 | v5 Vanilla image | v28 Vanilla image | Live-tested together |
+| Nothing OS 4.1 `B4.1-260812-1726` | v2 stock-module-trust image | v5 Nothing OS image | Live-tested together |
+| Another Evolution X build | Repackage and revalidate | Rebuild from that build's `vendor_boot` | Unsupported until tested |
+| Another Nothing OS build/OTA | Rebuild for its exact GKI and module signer | Rebuild from its exact `vendor_boot` | Unsupported until tested |
+| Other ROM/device/Android version | Unsupported | Unsupported | Do not flash |
 
-| Target | Final kernel boot image | Final OrangeFox v17 `vendor_boot` |
-| --- | --- | --- |
-| Tested Evolution X 11.10 GApps build | Supported and tested | Supported and tested |
-| Evolution X 11.10 Vanilla, identical firmware/platform | Expected to be a good candidate, but not tested | Use a ROM-matched merge unless platform ramdisk, DTB and bootconfig hashes are identical |
-| Nothing OS 4.0 / Android 16 | Unverified; do not assume compatibility | Incompatible as a direct flash; a stock-platform merge and new decryption test are required |
-| Another Android 16 custom ROM on CMF Phone 1 | Unverified; requires KMI/module validation | Incompatible as a direct flash unless all platform inputs match exactly |
-| Android 15, Android 17 or another phone | Unsupported | Unsupported |
+## Why the kernel is ROM-specific
 
-Nothing OS 4.0 for CMF Phone 1 is based on Android 16, but the Android version
-alone is not enough to make a low-level image compatible. See the official
-[Nothing OS 4.0 changelog](https://nothing.community/en/d/50171-cmf-phone-1-nothing-os-b40-251216-1717-changelog).
+The Evolution X images use Android 14 GKI 6.1.134 and ROM-specific AVB
+fingerprints. The Nothing OS image uses GKI 6.1.162 and the public certificate
+needed by its official protected module exports. Vendor and system modules must
+match the kernel's KMI symbol versions and trust configuration.
 
-## Why the kernel is not universal
-
-The published `boot.img` uses boot header v4 and contains the kernel without a
-ramdisk. That reduces ROM coupling, but the device still loads hardware-specific
-modules from its vendor ramdisk and vendor partitions. Android's GKI design
-requires those modules to match the kernel's Kernel Module Interface (KMI).
-
-Before using the kernel with another ROM, compare at least:
-
-- device and SoC: CMF Phone 1 / MT6878 only;
-- kernel family and release: Android 14 GKI 6.1, matching `6.1.134-android14-11`;
-- exported symbol CRCs required by every vendor module;
-- `vendor_boot`, `vendor_dlkm` and `system_dlkm` module set and load order;
-- firmware generation, SELinux policy and Android boot image properties.
-
-The tested Evolution X modules passed 3,269 unique shared-symbol CRC comparisons
-with zero mismatches, and all 15,998 kernel exports kept their previous CRCs.
-Repeat those checks for every different ROM or firmware build.
-
-References:
-
-- [AOSP kernel module support](https://source.android.com/docs/core/architecture/kernel/kernel-module-support)
-- [AOSP stable KMI requirements](https://source.android.com/docs/core/architecture/kernel/stable-kmi)
-- [AOSP GKI kernel overview](https://source.android.com/docs/core/architecture/kernel)
+Before adapting the kernel, compare the kernel release, module signer,
+`Module.symvers`, protected exports, `vendor_dlkm`/`system_dlkm` module set,
+load order, firmware and SELinux expectations.
 
 ## Why the recovery is ROM-specific
 
-CMF Phone 1 recovery is a type-`RECOVERY` ramdisk fragment inside boot-header-v4
-`vendor_boot`. The same image also carries ROM/platform-specific components:
+Recovery is a type-`RECOVERY` fragment inside header-v4 `vendor_boot`. The same
+image contains the ROM's platform ramdisk, early modules, DTB, bootconfig,
+first-stage fstab and AVB metadata. FBE decryption also depends on compatible
+Trustonic, KeyMint, Gatekeeper, Health and VINTF components.
 
-- type-`PLATFORM` vendor ramdisk and early kernel modules;
-- DTB and bootconfig;
-- first-stage fstab and logical-partition behavior;
-- Trustonic, KeyMint, Gatekeeper, Health and VINTF expectations;
-- metadata-encryption and file-based-encryption configuration;
-- AVB footer, key identity and partition metadata.
+The GApps, Vanilla and Nothing OS OrangeFox images therefore use separate bases
+even when their recovery UI code is identical. Never cross-flash them.
 
-The final v17 image deliberately combines the tested OrangeFox recovery
-fragment with the tested Evolution X platform fragment. Flashing that complete
-image on Nothing OS or a different custom ROM would replace that ROM's platform
-ramdisk and can cause a recovery loop, broken hardware, or a normal-boot failure.
+## Validated functions
 
-For another ROM, unpack that ROM's own `vendor_boot`, retain its platform
-ramdisk, DTB, bootconfig and AVB properties, replace only the recovery fragment,
-then rebuild, sign and test. Data decryption is not considered compatible until
-the new image can mount `/data` and `/data/media/0` read-write without formatting.
+Evolution X Vanilla v5/v28 passed repeated Android boot, KernelSU root, Wi-Fi,
+FBE/internal storage, MTP read/write/delete, clock/battery checks and
+non-destructive ADB sideload. GApps is separately packaged against build 2447;
+do not substitute the Vanilla image.
 
-Reference: [AOSP vendor boot partitions](https://source.android.com/docs/core/architecture/partitions/vendor-boot-partitions).
+Nothing OS kernel v2 passed Android boot, Wi-Fi, Bluetooth cycling, camera,
+GNSS-service requests, KernelSU/SUSFS checks, suspend/resume and log audits.
+Outdoor satellite TTFF, real SIM/IMS calling and long unplugged suspend remain
+unverified.
 
-## OTA and slot guidance
+Nothing OS OrangeFox v5 passed touch, decryption, storage, backup/read integrity,
+direct ZIP, on-screen sideload/cancel, MTP service start/stop, fastbootd and
+Android reboot. Restore-to-partition, Format Data, full ROM flashing, slot
+changes, USB OTG and removable media were not repeated during its final
+non-destructive qualification.
 
-- A/B OTAs can replace `boot` and `vendor_boot` on the updated slot.
-- Keep restore images from the exact ROM build currently installed.
-- After an OTA, do not reuse an older full `vendor_boot`; rebuild the recovery
-  merge from the new ROM base.
-- Always verify the active slot and image checksum before flashing.
-- Never use these files on a device other than CMF Phone 1.
+## OTA and restore guidance
+
+- An OTA can replace `boot` and `vendor_boot` on the updated slot.
+- Save original images from the exact installed build before flashing.
+- After any OTA, rebuild and revalidate instead of reusing the old images.
+- Verify SHA-256 and active slot before every flash.
+- Do not erase data as the first response to a kernel or recovery boot problem.

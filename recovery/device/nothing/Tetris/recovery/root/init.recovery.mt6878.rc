@@ -1,7 +1,16 @@
+on early-init
+    # These must be visible before the recovery init script starts its
+    # critical ueventd service.  The same defaults are compiled into
+    # prop.default; setting them here keeps diagnostic builds robust if a ROM
+    # fragment supplies a conflicting property file.
+    setprop init.svc_debug.no_fatal.ueventd true
+    setprop init.svc_debug.no_fatal.charger true
+
 on init
     setprop sys.usb.configfs 1
     setprop sys.usb.controller "11201000.usb0"
     setprop sys.usb.ffs.aio_compat 1
+    setprop service.adb.root 1
 
 on fs && property:ro.debuggable=0
     # set charging free due to it wait for USB activation

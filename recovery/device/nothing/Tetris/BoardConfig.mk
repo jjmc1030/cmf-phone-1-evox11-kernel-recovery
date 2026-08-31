@@ -137,7 +137,7 @@ BOARD_USES_RECOVERY_AS_BOOT := false
 BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
 BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/recovery.fstab
-# The recovery fstab already contains the ROM-matched Android 16 metadata-FBE
+# The recovery fstab contains the Nothing OS 4.1 Android 16 metadata-FBE
 # flags. Re-parsing a mounted vendor copy caused the v1 recovery process to
 # block at "Using additional fstab for decryption" and init then restarted it.
 TW_SKIP_ADDITIONAL_FSTAB := true
@@ -149,6 +149,15 @@ TARGET_USERIMAGES_USE_F2FS := true
 # background before this path unwraps the metadata key.
 TW_INCLUDE_CRYPTO := true
 TW_USE_FSCRYPT_POLICY := 2
+
+# Evolution X's Tetris recovery uses the AIDL boot-control service.  Make both
+# update_engine_sideload and OrangeFox's slot selector use that same interface.
+OF_USE_AIDL_BOOT_CONTROL := 1
+
+# Recreate the correct user-0 media path after Format Data and rebuild the MTP
+# export around it.  Without this, MTP can retain /data/media as its backing
+# directory while OrangeFox browses /data/media/0.
+OF_BIND_MOUNT_SDCARD_ON_FORMAT := 1
 
 # Security levels from the supplied Evolution X images.
 PLATFORM_SECURITY_PATCH := 2026-08-01
@@ -200,11 +209,18 @@ TW_NO_SCREEN_BLANK := true
 # driver, its vendor_dlkm dependencies, and bootinfo's charger dependencies
 # explicitly. TWRP mounts vendor_dlkm before starting the UI; all other display
 # and charger-class dependencies are already loaded by first-stage init.
-TETRIS_RECOVERY_TOUCH_MODULES := \
+# The touchscreen's vendor_dlkm bootinfo module imports four charger-info
+# symbols.  Their providers live in the Nothing OS vendor_boot module tree,
+# outside modules.load.recovery, so they must be requested explicitly before
+# bootinfo and focaltech_tp.  A live v4 test confirmed this exact dependency
+# order by creating the missing fts_ts input device after loading the four
+# providers.
+TETRIS_RECOVERY_PROVIDER_MODULES := \
     sc8541_charger.ko \
     upm6720_charger.ko \
     nu2115_charger.ko \
-    sgm41606S_charger.ko \
+    sgm41606S_charger.ko
+TETRIS_RECOVERY_TOUCH_MODULES := \
     bootinfo.ko \
     touchpanel_event_notify.ko \
     focaltech_tp.ko
@@ -212,4 +228,7 @@ TW_LOAD_VENDOR_MODULES_EXCLUDE_GKI := true
 TW_LOAD_VENDOR_BOOT_MODULES := true
 # Keep the driver list as one quoted compiler definition. Without the literal
 # quotes, every filename after the first is treated as a separate clang input.
-TW_LOAD_VENDOR_MODULES := $(shell echo \"$(sort $(notdir $(BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD)) $(TETRIS_RECOVERY_TOUCH_MODULES))\")
+# Do not sort the provider prefix: bootinfo imports one symbol from each of
+# these four modules.  Load them first, then the normal sorted recovery set.
+TETRIS_RECOVERY_SORTED_MODULES := $(filter-out $(TETRIS_RECOVERY_PROVIDER_MODULES),$(sort $(notdir $(BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD)) $(TETRIS_RECOVERY_TOUCH_MODULES)))
+TW_LOAD_VENDOR_MODULES := $(shell echo \"$(TETRIS_RECOVERY_PROVIDER_MODULES) $(TETRIS_RECOVERY_SORTED_MODULES)\")

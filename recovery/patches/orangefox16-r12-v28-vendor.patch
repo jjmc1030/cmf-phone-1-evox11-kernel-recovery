@@ -1,0 +1,391 @@
+diff --git a/Files/changelog.txt b/Files/changelog.txt
+index 1cc4684..382aa2c 100644
+--- a/Files/changelog.txt
++++ b/Files/changelog.txt
+@@ -1,3 +1,13 @@
++OrangeFox Recovery R12.0 Changelog
++-----------------------------------
++
++== R12.0 ==
++- Interface design overhaul, inspired by Material Expressive
++- New icons, which are renderring as svg
++- Brand new OrangeFox themes: Fox white and Fox dark.
++- Gesture navigation is now enabled by default
++- New font: Inter, which is now the default font
++- Implement an svg engine
+ 
+ 
+ OrangeFox Recovery R11.3 Changelog
+diff --git a/Files/credits.txt b/Files/credits.txt
+index d1f8658..3a68e28 100644
+--- a/Files/credits.txt
++++ b/Files/credits.txt
+@@ -6,6 +6,11 @@ OrangeFox Recovery Credits
+ * TWRP Team
+ * The Posy - for cursor
+ 
++== R12 interface refresh ==
++* fordownloads
++* Ctapchuk
++* MrYacha
++
+ == For donating ==
+ * GitLab.com
+ * JetBrains
+diff --git a/Files/fox.bashrc b/Files/fox.bashrc
+index 184ec96..2370e10 100644
+--- a/Files/fox.bashrc
++++ b/Files/fox.bashrc
+@@ -1,6 +1,31 @@
+ #
+-# sample system-wide bashrc file for OrangeFox
++# 	sample system-wide bashrc file for OrangeFox
+ #
++#	This file is part of the OrangeFox Recovery Project
++# 	Copyright (C) 2018-2026 The OrangeFox Recovery Project
++#
++#	OrangeFox is free software: you can redistribute it and/or modify
++#	it under the terms of the GNU General Public License as published by
++#	the Free Software Foundation, either version 3 of the License, or
++#	any later version.
++#
++#	OrangeFox is distributed in the hope that it will be useful,
++#	but WITHOUT ANY WARRANTY; without even the implied warranty of
++#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++#	GNU General Public License for more details.
++#
++# 	This software is released under GPL version 3 or any later version.
++#	See <http://www.gnu.org/licenses/>.
++#
++# 	Please maintain this if you use this script or any part of it
++#
++
++# HOME
++HOME=$(getprop "ro.orangefox.home")
++[ -z "$HOME" ] && HOME=/sdcard/Fox
++[ ! -d $HOME ] && mkdir -p -m 0777 $HOME
++[ ! -d $HOME ] && HOME=/tmp
++export HOME
+ 
+ # shell
+ export PS1='\s-\v \w > '
+@@ -15,6 +40,8 @@ alias del="rm -i"
+ alias ren="mv -i"
+ alias copy="cp -i"
+ alias diskfree="df -Ph"
++alias path="echo $PATH"
++alias ver="echo -n 'OrangeFox ' && echo -n '- ' && echo -n $(getprop ro.orangefox.type) && echo -n ' - ' && getprop ro.orangefox.release.version && cat /proc/version"
+ #
+ 
+ # go to a neutral location
+diff --git a/FoxExtras/sbin/foxstart.sh b/FoxExtras/sbin/foxstart.sh
+index 506fb19..ea4dab4 100755
+--- a/FoxExtras/sbin/foxstart.sh
++++ b/FoxExtras/sbin/foxstart.sh
+@@ -3,7 +3,7 @@
+ # 	Custom script for OrangeFox Recovery
+ #
+ #	This file is part of the OrangeFox Recovery Project
+-# 	Copyright (C) 2018-2025 The OrangeFox Recovery Project
++# 	Copyright (C) 2018-2026 The OrangeFox Recovery Project
+ #
+ #	OrangeFox is free software: you can redistribute it and/or modify
+ #	it under the terms of the GNU General Public License as published by
+@@ -22,7 +22,7 @@
+ #
+ #
+ # * Author: DarthJabba9, Ctapchuk
+-# * Date:   20251120
++# * Date:   20260324
+ # * Identify some ROM features and hardware components
+ # * Do some other sundry stuff
+ #
+@@ -523,12 +523,15 @@ local fox_cfg="$ETC_DIR/fox.cfg"
+ 
+    $SETPROP ro.orangefox.home "$fox_home"
+    $SETPROP ro.orangefox.settings "$fox_settings"
+-   
++
+    # if someone is still using old recovery sources
+-   ln -s $CFG /tmp/orangefox.cfg
++   cp $CFG /tmp/orangefox.cfg
+ 
+    # bashrc
+-   ln -sf /system/etc/bash/bashrc /.bashrc
++   local rc=$ETC_DIR/bash/bashrc
++   [ ! -f $rc ] && rc=$ETC_DIR/bashrc
++   [ ! -f $rc ] && rc=$ETC_DIR/bash.bashrc
++   [ -f $rc ] && cp $rc /.bashrc
+ }
+ 
+ # try to get display panel information
+diff --git a/OrangeFox_A16.sh b/OrangeFox_A16.sh
+index 8fbf103..c9202f9 100755
+--- a/OrangeFox_A16.sh
++++ b/OrangeFox_A16.sh
+@@ -19,7 +19,7 @@
+ # 	Please maintain this if you use this script or any part of it
+ #
+ # ******************************************************************************
+-# 26 January 2026
++# 15 April 2026
+ #
+ # *** This script is for the OrangeFox Android 14.1 manifest ***
+ #
+@@ -34,7 +34,7 @@
+ # other methods for patching recovery/boot images are no longer supported
+ export OF_USE_MAGISKBOOT_FOR_ALL_PATCHES=1
+ export OF_USE_MAGISKBOOT=1
+-export FOX_INTERNAL_RELEASE=R11.3
++export FOX_INTERNAL_RELEASE=R12.0
+ 
+ # device name
+ FOX_DEVICE=$(cut -d'_' -f2 <<<$TARGET_PRODUCT)
+@@ -728,6 +728,12 @@ local TDT=$(date "+%d %B %Y")
+      sed -i -e "s|^FOX_MISCELLANEOUS_ROOT_DIRECTORY=.*|FOX_MISCELLANEOUS_ROOT_DIRECTORY=\"$FOX_MISCELLANEOUS_ROOT_DIRECTORY\"|" $F
+   fi
+ 
++  # save settings root
++  if [ -n "$FOX_SETTINGS_ROOT_DIRECTORY" ]; then
++     echo -e "${RED}-- This build will use $FOX_SETTINGS_ROOT_DIRECTORY for its settings ... ${NC}"
++     sed -i -e "s|^FOX_SETTINGS_ROOT_DIRECTORY=.*|FOX_SETTINGS_ROOT_DIRECTORY=\"$FOX_SETTINGS_ROOT_DIRECTORY\"|" $F
++  fi
++
+   # disable auto-reboot after installing OrangeFox?
+   if [ "$FOX_INSTALLER_DISABLE_AUTOREBOOT" = "1" ]; then
+      echo -e "${RED}-- This build will skip all OrangeFox patches ... ${NC}"
+@@ -971,6 +977,13 @@ local upx_bin=$FOX_VENDOR_PATH/tools/upx;
+ 			bins=$(ls ./);
+ 			for i in $bins
+ 			do
++				# PID 1 re-executes itself after entering the vendor_init
++				# SELinux domain. UPX needs execmem while unpacking, which that
++				# domain intentionally denies. Symlinks such as ueventd and
++				# watchdogd may resolve back to init, so skip those as well.
++				if [ "$i" = "init" -o -L "$i" ]; then
++					continue;
++				fi
+ 				size=$(filesize $i);
+ 				if [ $size -gt $min -a "$(is_arm $i)" = "1" ]; then
+ 					echo -e "${WHITEONRED}-- Compressing \"$i\" with upx ... ${NC}";
+diff --git a/installer/META-INF/com/google/android/update-binary b/installer/META-INF/com/google/android/update-binary
+index d361c23..abb7087 100644
+--- a/installer/META-INF/com/google/android/update-binary
++++ b/installer/META-INF/com/google/android/update-binary
+@@ -3,13 +3,13 @@
+ # ******************************************************
+ # Description: 	Installer script for OrangeFox Recovery
+ # SPDX-License-Identifier: GPL-3.0-or-later
+-# Copyright (C) 2018-2025 The OrangeFox Recovery Project
++# Copyright (C) 2018-2026 The OrangeFox Recovery Project
+ # Author: 	DarthJabba9, Ctapchuk
+ # Date: 	TODAY
+ # ******************************************************
+ 
+ # last_modified
+-MOD_DATE="20251031"
++MOD_DATE="20260415"
+ 
+ # whether to print extra debug messages
+ FOX_INSTALLER_DEBUG_MODE=0
+@@ -103,6 +103,9 @@ FOX_VANILLA_BUILD=0
+ # whether we have been given a fixed OrangeFox stuff directory
+ FOX_MISCELLANEOUS_ROOT_DIRECTORY=""
+ 
++# whether we've been given a new settings root
++FOX_SETTINGS_ROOT_DIRECTORY=""
++
+ # whether to disable auto-reboot after installing OrangeFox
+ FOX_INSTALLER_DISABLE_AUTOREBOOT=0
+ 
+@@ -305,7 +308,7 @@ CheckRequirements() {
+ 
+ # do we have a virtual A/B device?
+ is_VAB() {
+-	if [ "$FOX_VIRTUAL_AB_DEVICE" = "1" -o "$(getprop ro.orangefox.virtual_ab)" = "1" -o "$(getprop ro.virtual_ab.enabled)" = "true" ]; then
++	if [ "$FOX_VIRTUAL_AB_DEVICE" = "1" -o "$($GETPROP ro.orangefox.virtual_ab)" = "1" -o "$($GETPROP ro.virtual_ab.enabled)" = "true" ]; then
+ 		echo "1"
+ 	else
+ 		echo "0"
+@@ -824,15 +827,32 @@ local PART=$(readlink $RECOVERY_PARTITION)
+ }
+ 
+ # reset settings to default
+-Reset_Settings() {
++Legacy_Reset_Settings() {
+ local F="$1"
+ 	[ -z "$F" ] && F=/sdcard
+ 	local FOX=$F/Fox
+-	ui_print "- Removing old OrangeFox configuration files ..."
++	ui_print "- Removing any legacy OrangeFox configuration files ..."
+ 	rm -rf $FOX/.bin.
+ 	rm -rf $FOX/.theme
+ 	rm -rf $FOX/.navbar
+ 	rm -f $FOX/.fox*
++}
++
++Reset_Settings() {
++local FOX_HOME=$($GETPROP "ro.orangefox.home")
++local FOX_SETTINGS=$($GETPROP "ro.orangefox.settings")
++	[ -z "$FOX_HOME" ] && FOX_HOME=/sdcard/Fox
++	[ -z "$FOX_SETTINGS" ] && FOX_SETTINGS=/sdcard/Fox
++
++	ui_print "- Removing any old OrangeFox configuration files ..."
++	rm -rf $FOX_HOME/.bin.
++	rm -f $FOX_HOME/.bash*
++	rm -f $FOX_HOME/fox*
++	rm -f $FOX_HOME/aromafm.cfg
++	rm -rf $FOX_SETTINGS/.theme
++	rm -rf $FOX_SETTINGS/.navbar
++	rm -f $FOX_SETTINGS/.fox*
++
+ 	if [ "$PERSIST_PATH" != "ERROR" -a -d $PERSIST_PATH ]; then
+ 	   	[ "$BOOTMODE" != "true" ] && mount_part $PERSIST_PATH
+ 	   	rm -f $PERSIST_PATH/.fsec*
+@@ -841,6 +861,33 @@ local F="$1"
+ 	else
+ 		[ "$PERSIST_PATH" = "ERROR" ] && ui_print "- Some old settings might remain."
+ 	fi
++
++	# remove any lingering legacy settings
++	Legacy_Reset_Settings;
++
++	# other contingencies (eg, installing with R11, or with another recovery)
++	local F=""
++	if [ -n "$FOX_SETTINGS_ROOT_DIRECTORY" ]; then
++		F=$FOX_SETTINGS_ROOT_DIRECTORY"/Fox"
++		if [ "$F" != "$FOX_SETTINGS" ]; then
++			FOX_SETTINGS=$F
++			rm -rf $FOX_SETTINGS/.theme
++			rm -rf $FOX_SETTINGS/.navbar
++			rm -f $FOX_SETTINGS/.fox*
++		fi
++	fi
++
++	if [ -n "$FOX_MISCELLANEOUS_ROOT_DIRECTORY" ]; then
++		F=$FOX_MISCELLANEOUS_ROOT_DIRECTORY"/Fox"
++		if [ "$F" != "$FOX_HOME" ]; then
++			FOX_HOME=$F
++			rm -rf $FOX_HOME/.bin.
++			rm -f $FOX_HOME/.bash*
++			rm -f $FOX_HOME/fox*
++			rm -f $FOX_HOME/aromafm.cfg
++		fi
++	fi
++	#
+ }
+ 
+ # install the OrangeFox extras to internal SD
+@@ -884,6 +931,8 @@ Install_OrangeFox_Extras_To_sdcard() {
+ 	   rm -rf "$internal_SD/Fox/FoxFiles"
+    	   rm -f "$internal_SD/Fox/.wolfs"
+    	   package_extract_dir "sdcard" "$internal_SD"
++	   chcon -R "u:object_r:media_rw_data_file:s0" "$internal_SD/Fox"
++	   chown -R "media_rw:media_rw" "$internal_SD/Fox"
+    	}
+ }
+ 
+diff --git a/installer/sdcard/Fox/fox.bashrc b/installer/sdcard/Fox/fox.bashrc
+index 4a59cc5..2695dae 100644
+--- a/installer/sdcard/Fox/fox.bashrc
++++ b/installer/sdcard/Fox/fox.bashrc
+@@ -1,14 +1,34 @@
+ #
+-# sample .bashrc file for OrangeFox
++#	sample .bashrc file for OrangeFox
+ #
++#	This file is part of the OrangeFox Recovery Project
++# 	Copyright (C) 2018-2026 The OrangeFox Recovery Project
++#
++#	OrangeFox is free software: you can redistribute it and/or modify
++#	it under the terms of the GNU General Public License as published by
++#	the Free Software Foundation, either version 3 of the License, or
++#	any later version.
++#
++#	OrangeFox is distributed in the hope that it will be useful,
++#	but WITHOUT ANY WARRANTY; without even the implied warranty of
++#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++#	GNU General Public License for more details.
++#
++# 	This software is released under GPL version 3 or any later version.
++#	See <http://www.gnu.org/licenses/>.
++#
++# 	Please maintain this if you use this script or any part of it
++#
++
+ # HOME
+-export HOME=$(getprop "ro.orangefox.home")
+-[ ! -n $HOME ] && export HOME=/sdcard/Fox
+-[ ! -d $HOME ] && mkdir -p $HOME
+-[ ! -d $HOME ] && export HOME=/tmp
++HOME=$(getprop "ro.orangefox.home")
++[ -z "$HOME" ] && HOME=/sdcard/Fox
++[ ! -d $HOME ] && mkdir -p -m 0777 $HOME
++[ ! -d $HOME ] && HOME=/tmp
++export HOME
+ 
+ # shell
+-export SHELL=/sbin/bash
++export SHELL=$(which bash)
+ export HISTFILE=$HOME/.bash_history
+ export PS1='\s-\v \w > '
+ 
+diff --git a/orangefox_build_vars.txt b/orangefox_build_vars.txt
+index b41dfd3..8a0b4b0 100644
+--- a/orangefox_build_vars.txt
++++ b/orangefox_build_vars.txt
+@@ -8,7 +8,7 @@
+ # The build vars beginning with "OF_" can be exported in vendorsetup.sh, or can be declared in a device tree make (ie, ".mk") file
+ #
+ # Copyright (C) 2019-2026 OrangeFox Recovery Project
+-# Date: 26 January 2026
++# Date: 17 April 2026
+ #
+ # -----------------------------------
+ #
+@@ -754,9 +754,9 @@
+ -
+ - Examples:
+ -
+--  "export FOX_SETTINGS_ROOT_DIRECTORY=/sdcard/PRIVATE"
++-  "export FOX_MISCELLANEOUS_ROOT_DIRECTORY=/sdcard/PRIVATE"
+ -
+--  "export FOX_SETTINGS_ROOT_DIRECTORY=/sdcard1/MyDev"
++-  "export FOX_MISCELLANEOUS_ROOT_DIRECTORY=/sdcard1/MyDev"
+ -
+ -
+ - This is a HIGHLY EXPERIMENTAL feature, which may have bugs; use with GREAT caution, and with lots of testing
+@@ -925,12 +925,6 @@
+    -    otherwise the recovery might not boot at all (eg, blank screen), even if it builds successfully
+    - default = 0
+ #
+-"OF_USE_AIDL_BOOT_CONTROL" [NEW]
+-   - this is for A/B devices only
+-   - set this to 1 if your device uses aidl (as opposed to hidl) to handle boot control, particularly changing slots
+-   - this may help in situations where your build cannot successfully change slots from the OrangeFox UI
+-   - default = 0
+-#
+ "OF_MASK_GET_FOLDER_SIZE_READ_ERRORS" [NEW]
+    - set this to 1 to cause certain read errors - when running Get_File_Size() - to be logged in the log file, rather than the recovery console
+    - this is not recommended, because the presence of the errors indicates a problem; it is best to find and cause and to fix it
+@@ -948,4 +942,20 @@
+    - if you cannot start the wlan service automatically "Start WLAN" button is linked to /system/bin/wlan_start
+    - See for reference: https://github.com/koaaN/android_device_oneplus_infiniti-orangefox/blob/fox_16.0/recovery/root/system/bin/wlan_start
+    - default = 0
++#
++"OF_DONT_SUBSTITUTE_PERMISSIONS" [NEW] [! EXPERIMENTAL !]
++   - Set this to 1 to opt out of substituting permissions/selinux contexts for OrangeFox-related files/folders, as required by Android 16 QPR2's access strictness
++   - If set to 1, OrangeFox leaves permissions/contexts alone, as normal. This is likely to cause restricted access (in Android 16 QPR2) to files/folders created
++   - by OrangeFox in the internal storage, because they will most likely be owned by root, and their selinux contexts would not be "media_rw".
++   - So, it is best to stay away from this setting, unless the subtituted permissions are causing problems.
++   - default = 0
++#
++"OF_VAB_ORS_WIPE_DATA_IS_FORMAT" [NEW] [! EXPERIMENTAL !]
++   - Set this to 1 to respond to ORS '--wipe-data' instructions in the expected manner, by formatting data.
++   - This is what AOSP recoveries do, and this (a 'factory reset') is what the system update_engine expects. Currently, we just wipe data, instead of formatting it.
++   - For virtual A/B devices, this often leaves the device a permanent 'merge' status after flashing a ROM (the 'unmerged snapshot' problem), causing a brick.
++   - This build var instructs the recovery to respond as expected, rather than as twrp has always done.
++   - This is only relevant to Virtual A/B devices. Do NOT try to use it for non-virtual A/B devices - you will only get a build error.
++   - default = 0
++#
+ # -----------------------------------

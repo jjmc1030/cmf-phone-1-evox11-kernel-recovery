@@ -1,0 +1,6 @@
+cc_binary {
+    name: "mtk_wlan_privcmd",
+    srcs: ["mtk_wlan_privcmd.c"],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
+    vendor: true,
+}

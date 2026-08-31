@@ -1,4 +1,11 @@
-<!-- Legacy libvintf fallback; keep in sync with vendor/etc/vintf/manifest.xml. -->
+<!--
+  Recovery-only device manifest for Nothing OS 4.1 build B4.1-260812-1726.
+
+  Keep device HAL declarations in the vendor VINTF namespace.  Nothing OS's
+  stock platform vendor-ramdisk also carries recovery fragments below
+  system/etc/vintf/manifest; those are removed by the stock-specific packaging
+  step because libvintf treats that directory as framework-owned.
+-->
 <manifest version="9.0" type="device" target-level="8">
     <hal format="aidl">
         <name>android.hardware.boot</name>
@@ -6,7 +13,8 @@
     </hal>
     <hal format="aidl">
         <name>android.hardware.health</name>
-        <version>4</version>
+        <!-- Match the AIDL Health version declared by this exact stock ROM. -->
+        <version>2</version>
         <fqname>IHealth/default</fqname>
     </hal>
     <hal format="aidl">
@@ -18,6 +26,10 @@
         <name>android.hardware.security.keymint</name>
         <version>3</version>
         <fqname>IKeyMintDevice/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.security.keymint</name>
+        <version>3</version>
         <fqname>IRemotelyProvisionedComponent/default</fqname>
     </hal>
     <hal format="aidl">

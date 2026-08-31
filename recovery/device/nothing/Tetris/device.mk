@@ -17,11 +17,13 @@ PRODUCT_PACKAGES += \
     update_engine_sideload \
     update_verifier
 
-# MediaTek boot-control implementation for slot switching.
+# Use the same recovery AIDL boot-control service as Evolution X for Tetris.
+# update_engine_sideload requires this service to select and activate the
+# inactive slot before it can apply an A/B payload. Its device VINTF declaration
+# lives in recovery/root/vendor/etc/vintf/manifest.xml; a recovery-variant VINTF
+# module would incorrectly install the device fragment under system/framework.
 PRODUCT_PACKAGES += \
-    android.hardware.boot@1.2-mtkimpl \
-    android.hardware.boot@1.2-service \
-    bootctrl
+    android.hardware.boot-service.default_recovery
 
 # Android 16 recovery health service and battery reporting. OrangeFox's
 # recovery process requests the AIDL IHealth/default service, and Evolution X
@@ -30,7 +32,10 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.health-service.example_recovery
 
-# MediaTek UFS preloader-path links.
+# MediaTek UFS preloader-path links. The helper is a recovery-only binary and
+# its init definition lives under system/etc/init so recovery init parses it.
+# It exposes the payload partition name preloader_raw_{a,b} through validated
+# device-mapper slices that skip the UFS boot-LUN header.
 PRODUCT_PACKAGES += \
     mtk_plpath_utils
 

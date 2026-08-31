@@ -17,8 +17,8 @@ odm /odm erofs ro wait,slotselect,avb,logical,first_stage_mount
 vendor_dlkm /vendor_dlkm erofs ro wait,slotselect,avb,logical,first_stage_mount
 odm_dlkm /odm_dlkm erofs ro wait,slotselect,avb,logical,first_stage_mount
 system_dlkm /system_dlkm erofs ro wait,slotselect,avb,logical,first_stage_mount
-/dev/block/by-name/metadata /metadata f2fs noatime,nosuid,nodev,sync wait,check,formattable,first_stage_mount
-/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,discard,fsync_mode=nobarrier,reserve_root=32768,resgid=1065,compress_extension=apk,compress_extension=so,compress_extension=vdex,compress_extension=odex,inlinecrypt,atgc,checkpoint_merge,compress_cache wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci,fscompress,readahead_size_kb=128
+/dev/block/by-name/metadata /metadata f2fs noatime,nosuid,nodev,discard,sync wait,check,formattable,first_stage_mount
+/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,inlinecrypt,checkpoint_merge,compress_cache wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci,fscompress
 /dev/block/by-name/protect1 /mnt/vendor/protect_f ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable
 /dev/block/by-name/protect2 /mnt/vendor/protect_s ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable
 /dev/block/by-name/nvdata /mnt/vendor/nvdata ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable

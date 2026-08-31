@@ -1,4 +1,9 @@
-7b18feeee9c50c100650a61779dd54133debabada6f410710a477f6ec0215098  CMF-Phone-1-EvolutionX-11.10-GApps-FeaturePack-WiFiFix-SUExecFix-v4-KSUNext-33252-SUSFS-2.2.0-boot.img
-a2a6034671f822c173abe719c5c7d9d69325cbf92e1422ff70b49176a20edb62  CMF-Phone-1-EvolutionX-11.10-OrangeFox-R12.0-Android16-StockPlatform-v17-DataFormatFix-vendor_boot.img
-05ac9caad5179a1829037e26139566b6fcffeee09f50491145aadb8f67757ef3  KernelSU-Next-v3.3.0-33252-CMF-local-manager.apk
+bef6690834a433db6f21fd4b48255dd3fa8c59a1a063407227339c28e8832272  CMF-Phone-1-EvolutionX-11.10-FeaturePack-SecurityFix-v5-KSUNext-33252-SUSFS-2.2.0-GApps-boot.img
+924d5104169070d3d9c20eaedbe8f843ed72ee4fc7e4b7f46a3544868cab70a8  CMF-Phone-1-EvolutionX-11.10-FeaturePack-SecurityFix-v5-KSUNext-33252-SUSFS-2.2.0-Vanilla-boot.img
+effefabb87bdcd16d9c528f82188a1471e65ca6e76128762eb31d3536bc98912  CMF-Phone-1-EvolutionX-11.10-OrangeFox-R12.0-Android16-v28-DualROM-TimeResourceFix-GApps-vendor_boot.img
+ef6a5c3085824f9ed5a77e4f628eac4757d6e2cc3cf51f9128080d26e34d3439  CMF-Phone-1-EvolutionX-11.10-OrangeFox-R12.0-Android16-v28-DualROM-TimeResourceFix-Vanilla-vendor_boot.img
 8ed123a0d118ef4b5c19b427a5763c17ced11f5f6f84189c6cfdd900242e0af5  CMF-Phone-1-MediaTek-WiFi-Init-Config-Fix-KernelSU-v2.zip
+bd47bd8162aaca03e1f11c77c33fd2976c7d43492a6f33d4696f2fc95977894a  CMF-Phone-1-NothingOS-4.1-B4.1-260812-1726-FeaturePack-v2-StockModuleTrustFix-KSUNext-33252-SUSFS-2.2.0-boot.img
+7f1c9a86c637511cde57c94b8d6bc9aaf5034f23fcb973e0afa3e00f8b7ef956  CMF-Phone-1-NothingOS-4.1-B4.1-260812-1726-OrangeFox-R12.0-v5-MinimalPlatform-TouchProviderOrder-EarlyADB-vendor_boot.img
+754213b2119c9ecb64f547fa86060ab251d423ae6038823fb8538124c50468cf  EvolutionX-PostBoot-eBPF-Lockdown-KSU-v1.0.zip
+05ac9caad5179a1829037e26139566b6fcffeee09f50491145aadb8f67757ef3  KernelSU-Next-v3.3.0-33252-CMF-local-manager.apk

@@ -1,130 +1,102 @@
 # CMF Phone 1 Android 16 kernel and OrangeFox R12
 
-Unofficial development release for the CMF Phone 1 (`Tetris` / A015), built
-and tested with Evolution X 11.10 GApps on Android 16. It contains a
-feature-packed Android 14/6.1 GKI kernel and an OrangeFox R12.0 recovery port.
+Experimental, unofficial kernel and recovery builds for CMF Phone 1
+(`Tetris` / A015), created with assistance from OpenAI Codex.
 
 > [!CAUTION]
-> This is device-specific low-level software. Keep ROM-matched `boot` and
-> `vendor_boot` restore images before testing. Verify every SHA-256, identify
-> the active slot, and flash only the documented partition. Never format
-> `/data` to troubleshoot recovery decryption.
+> These are device- and ROM-build-specific low-level images. An unlocked
+> bootloader is required. Keep exact ROM-matched `boot` and `vendor_boot`
+> restore images, verify SHA-256 checksums and flash only the active slot. The
+> project author, contributors, upstream projects, OpenAI and OpenAI Codex are
+> not responsible for broken devices, bootloops or lost data.
 
-## Final tested builds
+## v2.0.0 tested matrix
 
-| Component | Final version | On-device result |
-| --- | --- | --- |
-| Kernel | `6.1.134-android14-11 #4` | Android boots normally; Wi-Fi, mobile data, sleep/wake, F2FS I/O and networking tested |
-| KernelSU Next | `3.3.0-38-g1ce76ef5`, code `33252` | Kernel, Manager and `/data/adb/ksud` match; ADB and Termux `su` return UID 0 in `u:r:ksu:s0` |
-| SUSFS | `2.2.0` | Integrated with KernelSU Next; BindHosts verified as a real hosts-file mount |
-| Kernel feature pack | BBG, DroidSpaces prerequisites, BBR/BBRv3, WireGuard, IP Set, IPv6 NAT, TTL/HL, CONNMARK, CAKE, fq/fq_codel, CIFS, NTSync, BTF/eBPF, tmpfs xattrs/ACLs | Built, configuration-checked and boot-tested |
-| OrangeFox | R12.0 Android 16, stock-platform v17 | Boots and remains stable; `/data`, `/metadata` and internal storage mount read-write; device-side MTP/ADB active; battery and clock fixes retained; safe data-format teardown added |
+| ROM target | Kernel | OrangeFox | Result |
+| --- | --- | --- | --- |
+| Evolution X 11.10 GApps build 2447 | FeaturePack v5, 6.1.134 | R12 v28 GApps | ROM-specific package; GApps build uses its own AVB metadata and platform image |
+| Evolution X 11.10 Vanilla build 2446 | FeaturePack v5, 6.1.134 | R12 v28 Vanilla | Both images live-tested together |
+| Nothing OS 4.1 `B4.1-260812-1726` | FeaturePack v2, 6.1.162 | R12 v5 | Both images live-tested on the exact stock build |
 
-The latest recovery soak kept recovery, logd, Health, Trustonic, KeyMint,
-Gatekeeper and Keystore2 alive without VINTF, F2FS, dm-crypt, panic or fatal
-errors. Physical touch should still be confirmed by each tester after flashing.
-The v17 Format Data fix was compiled and its non-destructive prerequisites were
-validated, but the irreversible format itself was not run during final testing.
+Do not interchange GApps, Vanilla or Nothing OS images. Nothing OS uses a
+different GKI base and stock module-signing trust chain. Each OrangeFox image
+also preserves the target ROM's own platform ramdisk, DTB and bootconfig.
+
+## Kernel features
+
+- KernelSU Next 33252 with matching Manager and `ksud`
+- SUSFS 2.2.0
+- Baseband Guard
+- DroidSpaces/LXC-oriented namespace prerequisites
+- BBRv1 and BBRv3, CUBIC, BIC, Westwood and HTCP
+- WireGuard, IP Set, IPv6 NAT, TTL/HL and CONNMARK
+- CAKE, fq and fq_codel
+- CIFS, NTSync, tmpfs xattrs and POSIX ACLs
+- BTF/eBPF, BPF events and FUSE-BPF
+
+Evolution X v5 defaults unprivileged BPF off early but lets the ROM finish its
+startup policy. The optional post-boot module applies a delayed lockdown after
+Android finishes booting. The rejected v6 hard-lock implementation bootlooped
+and is not distributed.
+
+Nothing OS v2 embeds only the public certificate from the exact stock kernel so
+the official Bluetooth/Wi-Fi modules retain access to protected GKI exports. No
+private signing key is included.
+
+## OrangeFox status
+
+Evolution X v28 includes the accumulated data-format, ROM ZIP, safe recovery
+reflash, A/B payload, FBE/internal storage, MTP, clock, battery and sideload
+fixes. Vanilla v28 passed decryption, internal-storage MTP round-trip and a
+non-destructive sideload without the previous finishing/cancel hang.
+
+Nothing OS v5 passed touch, PIN/FBE decryption, internal storage, boot backup
+integrity, direct ZIP installation, on-screen sideload/cancel, MTP service
+transitions, fastbootd, Android reboot and a five-minute stability monitor. Its
+remote command-line MTP action can leave the UI on a single-action loading page;
+normal recovery navigation restores the UI. The OrangeFox CLI/ORS sideload
+diagnostic path also has an output-pipe race, so use the on-screen sideload UI.
 
 ## Repository layout
 
-- `kernel/config` — final ROM-compatible kernel configuration.
-- `kernel/patches` — feature, KernelSU/SUSFS and SU executable-fix history.
-- `kernel/scripts` — pinned reproducible build scripts, including final v4.
-- `recovery/device/nothing/Tetris` — redistributable Android 16 device tree.
-- `recovery/patches` — OrangeFox R12 UI port, v15 runtime/decryption fixes, and v16/v17 data-format fixes.
-- `recovery/scripts` — guarded flash/restore and diagnostic helpers.
-- `docs` — version history, final validation and compatibility notes.
-- `CREDITS.md` — upstream projects, maintainers, links and pinned revisions.
+- `kernel/config`, `kernel/patches`, `kernel/scripts` — final configurations,
+  integration patches and pinned build/package scripts.
+- `recovery/device/nothing/Tetris` — Android 16 device tree with separate
+  Evolution X and Nothing OS products.
+- `recovery/patches`, `recovery/scripts` — OrangeFox R12 changes and packaging
+  helpers through Evolution X v28 / Nothing OS v5.
+- `docs` — live validation and compatibility records.
+- `CREDITS.md`, `LICENSES.md` — upstream acknowledgements and licensing.
 
-Restricted MediaTek source and private device logs are not published. See
-`recovery/device/nothing/Tetris/EXCLUDED_INPUTS.md` and `LICENSES.md`.
+The complete Evolution X kernel source is on `main` in
+[`cmf-phone-1-evox11-kernel-source`](https://github.com/jjmc1030/cmf-phone-1-evox11-kernel-source).
+The exact Nothing OS 4.1 / Linux 6.1.162 source is published in that repository's
+`nothingos-4.1-b4.1-260812-1726` branch.
 
-The complete modified kernel source snapshot, including the vendored KernelSU
-33252 kernel code, is published separately at
-<https://github.com/jjmc1030/cmf-phone-1-evox11-kernel-source>.
+## Installation
 
-## Kernel build and installation
-
-Rebuild the final kernel with:
-
-```bash
-kernel/scripts/build-cmf-evox-featurepack-suexecfix-v4-kernel.sh /path/to/work
-```
-
-The script pins Android common kernel `android14-6.1-2025-05_r1`, the exact
-KernelSU Next SUSFS revision used for code 33252, and AOSP Clang `r487747b`.
-It applies the published common-kernel and KernelSU patches, verifies important
-features, and emits `Image.lz4`.
-
-Download the final boot image from the GitHub release and verify its checksum.
-In bootloader fastboot mode:
+Download only the pair matching the exact installed ROM. In bootloader fastboot
+(not fastbootd), inspect the active slot:
 
 ```text
 fastboot getvar current-slot
-fastboot flash boot_b CMF-Phone-1-EvolutionX-11.10-GApps-FeaturePack-WiFiFix-SUExecFix-v4-KSUNext-33252-SUSFS-2.2.0-boot.img
+```
+
+Replace `<slot>` with exactly `a` or `b`:
+
+```text
+fastboot flash boot_<slot> ROM-MATCHED-CUSTOM-boot.img
+fastboot flash vendor_boot_<slot> ROM-MATCHED-OrangeFox-vendor_boot.img
 fastboot reboot
 ```
 
-Use `boot_a` only when slot A is active. Do not flash this file to `init_boot`,
-`vendor_boot`, or any other device.
+You may flash only one component. Never flash a kernel to `init_boot` or
+`vendor_boot`, and never flash the recovery image to `boot`, `init_boot` or a
+standalone `recovery` partition.
 
-## OrangeFox installation
+Official stock/ROM restore images are intentionally not redistributed. If a
+component fails, return to bootloader fastboot and restore the matching original
+image to the same active partition before considering a data wipe.
 
-The v17 release image is a complete 64 MiB `vendor_boot` built with the tested
-Evolution X 11.10 platform ramdisk, DTB and bootconfig. Place the downloaded
-asset in `release-assets/`, keep an exact ROM-matched restore image outside the
-repository, then run:
-
-```bash
-recovery/scripts/flash-orangefox-or-restore.sh install
-```
-
-The helper verifies the release checksum, requires exactly one bootloader
-fastboot device, rejects fastbootd, detects the active slot and asks for a
-confirmation phrase. For restore, provide your own image:
-
-```bash
-RESTORE_IMAGE=/absolute/path/to/rom-matched-vendor_boot.img \
-RESTORE_SHA256=<verified-sha256-from-your-rom-package> \
-  recovery/scripts/flash-orangefox-or-restore.sh restore
-```
-
-Do not flash the recovery image to `boot`, `init_boot`, or a standalone
-`recovery` partition.
-
-## ROM compatibility
-
-| Target | Kernel | OrangeFox v17 image |
-| --- | --- | --- |
-| Evolution X 11.10 GApps, tested build | **Supported and tested** | **Supported and tested** |
-| Evolution X 11.10 Vanilla on the identical firmware/platform build | Likely compatible, not tested | Rebuild/merge from that ROM's `vendor_boot` unless its platform/DTB/bootconfig hashes match exactly |
-| Nothing OS 4.0 / Android 16 | Not certified; requires KMI and vendor-module comparison first | **Do not flash this Evolution X image directly.** Merge the OrangeFox recovery fragment into the stock ROM's own `vendor_boot` and test decryption |
-| Other Android 16 custom ROMs | Only if the CMF Phone 1 uses the same 6.1 GKI KMI and compatible vendor modules | ROM-specific `vendor_boot` merge required; crypto, Trustonic, fstab and firmware must match |
-| Android 15, Android 17, or another device | Unsupported | Unsupported |
-
-The kernel boot image has no ramdisk, which makes it less ROM-coupled than the
-recovery image, but it is not universal. GKI vendor modules still depend on a
-compatible Kernel Module Interface. The recovery is more tightly coupled:
-Android vendor boot v4 carries platform/recovery ramdisk fragments, DTB and
-bootconfig, and recovery decryption depends on the ROM's vendor security stack.
-
-An OTA may replace `boot` or `vendor_boot`. After any ROM/firmware update,
-restore the new ROM images first and repeat compatibility checks before
-reapplying this work. See `COMPATIBILITY.md` for the full matrix and rationale.
-
-## Release checksums
-
-```text
-7b18feeee9c50c100650a61779dd54133debabada6f410710a477f6ec0215098  CMF-Phone-1-EvolutionX-11.10-GApps-FeaturePack-WiFiFix-SUExecFix-v4-KSUNext-33252-SUSFS-2.2.0-boot.img
-a2a6034671f822c173abe719c5c7d9d69325cbf92e1422ff70b49176a20edb62  CMF-Phone-1-EvolutionX-11.10-OrangeFox-R12.0-Android16-StockPlatform-v17-DataFormatFix-vendor_boot.img
-05ac9caad5179a1829037e26139566b6fcffeee09f50491145aadb8f67757ef3  KernelSU-Next-v3.3.0-33252-CMF-local-manager.apk
-8ed123a0d118ef4b5c19b427a5763c17ced11f5f6f84189c6cfdd900242e0af5  CMF-Phone-1-MediaTek-WiFi-Init-Config-Fix-KernelSU-v2.zip
-```
-
-## Credits and licensing
-
-This is an integration and device-porting project, not ownership of the
-upstream work. See `CREDITS.md` for exact acknowledgements and source revisions
-and `LICENSES.md` for the mixed-license notice. CMF, Nothing, Evolution X,
-KernelSU, OrangeFox and TWRP names belong to their respective owners.
+See [COMPATIBILITY.md](COMPATIBILITY.md), [RELEASE_NOTES.md](RELEASE_NOTES.md)
+and the GitHub release checksums before flashing.

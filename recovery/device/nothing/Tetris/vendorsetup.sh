@@ -7,7 +7,7 @@ export FOX_AB_DEVICE=1
 export FOX_VIRTUAL_AB_DEVICE=1
 export FOX_VENDOR_BOOT_RECOVERY=1
 export FOX_BUILD_TYPE="Unofficial"
-export OF_MAINTAINER="CMF Phone 1 Community"
+export OF_MAINTAINER="CMF-Phone-1-Community"
 
 # CMF Phone 1 display geometry.
 export OF_SCREEN_H=2400

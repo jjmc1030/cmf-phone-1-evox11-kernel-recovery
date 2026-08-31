@@ -1,0 +1,1410 @@
+diff --git a/data.cpp b/data.cpp
+index 1b322684..1b351b4f 100644
+--- a/data.cpp
++++ b/data.cpp
+@@ -656,6 +656,14 @@ int DataManager::ShowProgress(float Portion, const float Seconds)
+ void DataManager::update_tz_environment_variables(void)
+ {
+ 	string TZ = GetStrValue(TW_TIME_ZONE_VAR);
++#ifdef OF_FORCE_TIMEZONE
++	TZ = OF_FORCE_TIMEZONE;
++	// Keep the visible/persisted OrangeFox value aligned with the timezone
++	// actually applied below. Previously a stale saved value was displayed
++	// even though the environment and clock were already correct.
++	SetValue(TW_TIME_ZONE_VAR, TZ, 1);
++	SetValue(TW_TIME_ZONE_GUISEL, TZ, 1);
++#endif
+ 	setenv("TZ", TZ.c_str(), 1);
+ 	tzset();
+ 	property_set("persist.sys.timezone", TZ.c_str());
+@@ -1266,7 +1274,12 @@ void DataManager::SetDefaultValues()
+   mPersist.SetValue(TW_TIME_ZONE_GUISEL, OF_DEFAULT_TIMEZONE);
+   mPersist.SetValue(TW_TIME_ZONE_GUIOFFSET, "0");
+   mPersist.SetValue(TW_TIME_ZONE_GUIDST, "1");
+-  mPersist.SetValue(TW_AUTO_REFLASHTWRP_VAR, "1");
++  #if defined(FOX_VENDOR_BOOT_RECOVERY)
++    // Never repack a ROM-installed vendor_boot with the currently booted slot.
++    mPersist.SetValue(TW_AUTO_REFLASHTWRP_VAR, "0");
++  #else
++    mPersist.SetValue(TW_AUTO_REFLASHTWRP_VAR, "1");
++  #endif
+ 
+   // avb2.0 disable
+   // by patching boot image
+@@ -1838,4 +1851,3 @@ void DataManager::Leds(bool enable)
+     }
+ }
+ #endif
+-
+diff --git a/gui/action.cpp b/gui/action.cpp
+index d7ae2ac4..b14fbeae 100755
+--- a/gui/action.cpp
++++ b/gui/action.cpp
+@@ -101,6 +101,7 @@ private:
+ 
+   pthread_t m_thread;
+   bool m_thread_running;
++  bool m_thread_joinable;
+   pthread_mutex_t m_act_lock;
+ };
+ 
+@@ -116,6 +117,7 @@ static void *ActionThread_work_wrapper(void *data)
+ ActionThread::ActionThread()
+ {
+   m_thread_running = false;
++  m_thread_joinable = false;
+   DataManager::SetValue("tw_action_thread_running", "0");
+   pthread_mutexattr_t attr;
+   pthread_mutexattr_init(&attr);
+@@ -127,10 +129,12 @@ ActionThread::ActionThread()
+ ActionThread::~ActionThread()
+ {
+   pthread_mutex_lock(&m_act_lock);
+-  if (m_thread_running)
++  if (m_thread_joinable)
+     {
++      pthread_t thread = m_thread;
++      m_thread_joinable = false;
+       pthread_mutex_unlock(&m_act_lock);
+-      pthread_join(m_thread, NULL);
++      pthread_join(thread, NULL);
+     }
+   else
+     {
+@@ -164,11 +168,33 @@ void ActionThread::threadActions(GUIAction * act)
+     }
+   else
+     {
++      // Reap the preceding completed thread before reusing m_thread. Without
++      // this join, every GUI action leaks a joinable pthread and recovery can
++      // eventually stop accepting work after repeated ADB/UI operations.
++      if (m_thread_joinable)
++        {
++          pthread_t thread = m_thread;
++          m_thread_joinable = false;
++          pthread_join(thread, NULL);
++        }
++
+       m_thread_running = true;
+       DataManager::SetValue("tw_action_thread_running", "1");
+-      pthread_mutex_unlock(&m_act_lock);
+       ThreadData *d = new ThreadData(this, act);
+-      pthread_create(&m_thread, NULL, &ActionThread_work_wrapper, d);
++      const int rc = pthread_create(&m_thread, NULL,
++                                    &ActionThread_work_wrapper, d);
++      if (rc != 0)
++        {
++          m_thread_running = false;
++          DataManager::SetValue("tw_action_thread_running", "0");
++          delete d;
++          LOGERR("Unable to start action thread: %s\n", strerror(rc));
++        }
++      else
++        {
++          m_thread_joinable = true;
++        }
++      pthread_mutex_unlock(&m_act_lock);
+     }
+ }
+ 
+@@ -2117,6 +2143,7 @@ int GUIAction::adbsideload(std::string arg __unused)
+ 		operation_end(0);
+ 	} else {
+ 		gui_msg("start_sideload=Starting ADB sideload feature...");
++		DataManager::SetValue("tw_action_text1", "Waiting for ADB package...");
+ 		bool mtp_was_enabled = TWFunc::Toggle_MTP(false);
+ 
+ 		// wait for the adb connection
+@@ -2138,35 +2165,54 @@ int GUIAction::adbsideload(std::string arg __unused)
+ 			if (wipe_dalvik)
+ 				PartitionManager.Wipe_Dalvik_Cache();
+ 		}
+-		TWFunc::Fox_Property_Set("ctl.start", "adbd");
+-		TWFunc::Toggle_MTP(mtp_was_enabled);
+ 		reinject_after_flash();
++
++		/*
++		 * Publish completion before restoring USB services.  MTP storage
++		 * registration can mount /data and block after an A/B payload changes
++		 * slots; keeping it ahead of operation_end() leaves the UI permanently
++		 * on the sideload page even though update_engine already succeeded.
++		 */
+ 		operation_end(ret);
++
++		const bool rom_was_installed =
++			ret == 0 && DataManager::GetIntValue(FOX_ZIP_INSTALLER_CODE) != 0;
++		/*
++		 * Stay in the reliable adb-only configuration after every sideload.
++		 * Re-registering MTP storage here can block on /data and prevent the
++		 * action worker from returning even after operation_end().
++		 */
++		TWFunc::Toggle_MTP(false);
++		if (rom_was_installed) {
++			gui_msg("sideload_rom_complete=ROM sideload complete. Reboot recovery before enabling MTP or flashing more files.");
++		} else if (mtp_was_enabled) {
++			gui_msg("sideload_complete_adb=ADB sideload complete. MTP remains off; enable it from Mount if needed.");
++		}
++
++		// Start regular adbd after the final USB configuration is selected.
++		TWFunc::Fox_Property_Set("ctl.start", "adbd");
+ 	}
+ 	return 0;
+ }
+ 
+ int GUIAction::adbsideloadcancel(std::string arg __unused)
+ {
+-	struct stat st;
+ 	DataManager::SetValue("tw_has_cancel", 0); // Remove cancel button from gui
+ 	gui_msg("cancel_sideload=Cancelling ADB sideload...");
+-	LOGINFO("Signaling child sideload process to exit.\n");
+-	// Calling stat() on this magic filename signals the minadbd
+-	// subprocess to shut down.
+-	stat(FUSE_SIDELOAD_HOST_EXIT_PATHNAME, &st);
++	DataManager::SetValue("tw_action_text1", "Stopping ADB sideload...");
+ 	sideload_child_pid = GetMiniAdbdPid();
+ 	if (!sideload_child_pid) {
+-		LOGERR("Unable to get child ID\n");
++		LOGINFO("ADB sideload process has already exited\n");
++		DataManager::SetValue("tw_page_done", "1");
+ 		return 0;
+ 	}
+-	::sleep(1);
+-	LOGINFO("Killing child sideload process.\n");
+-	kill(sideload_child_pid, SIGTERM);
+-	int status;
+-	LOGINFO("Waiting for child sideload process to exit.\n");
+-	waitpid(sideload_child_pid, &status, 0);
+-	sideload_child_pid = 0;
++	LOGINFO("Forcing sideload process termination.\n");
++	// Avoid /sideload/exit here: its FUSE lookup can block after the host has
++	// disconnected. SIGKILL closes the socket and FUSE descriptors, allowing
++	// the action worker to leave its listener and perform the only waitpid().
++	kill(sideload_child_pid, SIGKILL);
++	// The sideload worker owns waitpid(). Waiting here races that worker and
++	// can leave the GUI permanently on "Cancelling ADB sideload".
+ 	DataManager::SetValue("tw_page_done", "1"); // For OpenRecoveryScript support
+ 	return 0;
+ }
+@@ -3095,4 +3141,4 @@ int GUIAction::setvaluebyfile(std::string arg) {
+   }
+   //gui_print("%s", info.c_str());
+   return 0;
+-}
+\ No newline at end of file
++}
+diff --git a/gui/resources.cpp b/gui/resources.cpp
+index 127f7416..13d93513 100755
+--- a/gui/resources.cpp
++++ b/gui/resources.cpp
+@@ -83,7 +83,8 @@ bool endsWith(std::string const &fullString, std::string const &ending) {
+     }
+ }
+ 
+-void Resource::LoadImage(ZipArchiveHandle pZip, std::string file, gr_surface* surface, float scale)
++void Resource::LoadImage(ZipArchiveHandle pZip, std::string file, gr_surface* surface,
++			 float scale, bool log_failure)
+ {
+ 	int rc = 0;
+ 	if (ExtractResource(pZip, "images", file, ".png", TMP_RESOURCE_NAME) == 0)
+@@ -108,7 +109,7 @@ void Resource::LoadImage(ZipArchiveHandle pZip, std::string file, gr_surface* su
+ 			rc = res_create_svg_surface(nam.c_str(), scale, surface);
+ 		}
+ 	}
+-	if (rc != 0)
++	if (rc != 0 && log_failure)
+ 		LOGINFO("Failed to load image from %s%s, error %d\n", file.c_str(), pZip ? " (zip)" : "", rc);
+ }
+ 
+@@ -499,7 +500,10 @@ AnimationResource::AnimationResource(xml_node<>* node, ZipArchiveHandle pZip)
+ 
+ 		gr_surface surface = nullptr;
+ 		gr_surface temp_surface = nullptr;
+-		LoadImage(pZip, fileName.str(), &temp_surface);
++		// A missing next frame is the normal terminator for an animation
++		// sequence, not a damaged resource. Keep genuine image failures logged
++		// everywhere else while avoiding a false error for frame N+1 here.
++		LoadImage(pZip, fileName.str(), &temp_surface, 1.0, false);
+ 		CheckAndScaleImage(temp_surface, &surface, retain_aspect);
+ 		if (surface) {
+ 			mSurfaces.push_back(surface);
+diff --git a/gui/resources.hpp b/gui/resources.hpp
+index edebebf0..f149bcd7 100755
+--- a/gui/resources.hpp
++++ b/gui/resources.hpp
+@@ -70,7 +70,8 @@ private:
+ 
+ protected:
+ 	static int ExtractResource(ZipArchiveHandle pZip, std::string folderName, std::string fileName, std::string fileExtn, std::string destFile);
+-	static void LoadImage(ZipArchiveHandle pZip, std::string file, gr_surface* surface, float scale = 1.0);
++	static void LoadImage(ZipArchiveHandle pZip, std::string file, gr_surface* surface,
++			      float scale = 1.0, bool log_failure = true);
+ 	static void CheckAndScaleImage(gr_surface source, gr_surface* destination, int retain_aspect);
+ };
+ 
+diff --git a/gui/theme/portrait_hdpi/resources/images.xml b/gui/theme/portrait_hdpi/resources/images.xml
+index 2ab1f957..7fb98fe2 100644
+--- a/gui/theme/portrait_hdpi/resources/images.xml
++++ b/gui/theme/portrait_hdpi/resources/images.xml
+@@ -124,6 +124,5 @@
+ 		<image name="author_yan" filename="Default/About/author_yan" retainaspect="1"/>
+ 		<image name="author_jabba" filename="Default/About/author_jabba" retainaspect="1"/>
+ 		<image name="maintainer_img" filename="Default/About/maintainer" retainaspect="1"/>
+-		<image name="maintainer_layer" filename="Default/About/maintainer_layer" retainaspect="1"/>
+ 	</resources>
+ </recovery>
+diff --git a/openrecoveryscript.cpp b/openrecoveryscript.cpp
+index 304f617c..4d7c54b3 100755
+--- a/openrecoveryscript.cpp
++++ b/openrecoveryscript.cpp
+@@ -435,14 +435,11 @@ int OpenRecoveryScript::run_script_file(void) {
+ 
+ 				pid_t sideload_child_pid = GetMiniAdbdPid();
+ 				if (sideload_child_pid != 0) {
+-					LOGINFO("Signaling child sideload process to exit.\n");
+-					struct stat st;
+-					// Calling stat() on this magic filename signals the minadbd
+-					// subprocess to shut down.
+-					stat(FUSE_SIDELOAD_HOST_EXIT_PATHNAME, &st);
+-					int status;
+-					LOGINFO("Waiting for child sideload process to exit.\n");
+-					waitpid(sideload_child_pid, &status, 0);
++					// The sideload worker owns process reaping. A FUSE lookup of
++					// /sideload/exit can block after host disconnect, so only force
++					// termination here and let the bounded worker cleanup finish.
++					LOGINFO("Forcing child sideload process to exit.\n");
++					kill(sideload_child_pid, SIGKILL);
+ 				}
+ 
+ 				property_set("ctl.start", "adbd");
+diff --git a/orangefox.cpp b/orangefox.cpp
+index 6a648e42..71855c0b 100644
+--- a/orangefox.cpp
++++ b/orangefox.cpp
+@@ -1076,6 +1076,17 @@ void Fox_Post_Zip_Install(const int result)
+    Fox_Zip_Installer_Code = DataManager::GetIntValue(FOX_ZIP_INSTALLER_CODE);
+    if (Fox_Zip_Installer_Code != 0) // a ROM was installed
+      {
++#if defined(FOX_VENDOR_BOOT_RECOVERY)
++	 /*
++	  * A standard A/B payload replaces vendor_boot on the target slot.  On a
++	  * vendor_boot recovery, running OrangeFox's legacy deactivation/AVB and
++	  * recovery-repack steps here mutates that freshly installed image using
++	  * the currently booted slot's ramdisk.  The resulting mixed vendor ramdisk
++	  * can make first-stage init exit before Android starts.  Preserve the ROM's
++	  * boot chain exactly as update_engine wrote it.
++	  */
++	 LOGINFO("Vendor-boot recovery: preserving ROM boot and AVB images after install\n");
++#else
+          usleep(16384);
+          TWFunc::Deactivation_Process();
+          DataManager::SetValue(FOX_CALL_DEACTIVATION, 0);
+@@ -1090,6 +1101,7 @@ void Fox_Post_Zip_Install(const int result)
+ 	 if (DataManager::GetIntValue(TW_AUTO_DISABLE_AVB2_VAR))
+ 		PartitionManager.Disable_AVB2(true);
+ 	 #endif
++#endif
+ 
+     	 // Run any custom script after ROM flashing
+     	 TWFunc::MIUI_ROM_SetProperty(Fox_Zip_Installer_Code);
+@@ -1110,10 +1122,22 @@ void Fox_Post_Zip_Install(const int result)
+ 	#endif
+ 	//---- Virtual A/B compensations ---- //
+ #ifdef AB_OTA_UPDATER
+-	if (DataManager::GetIntValue(TW_AUTO_REFLASHTWRP_VAR) && TWFunc::IsRecoveryOverwritten()) {
+-		twrpRepacker repacker;
+-		repacker.Flash_Current_Twrp();
+-		TWFunc::IsRecoveryOverwritten(true);
++	if (DataManager::GetIntValue(TW_AUTO_REFLASHTWRP_VAR)) {
++	#if defined(FOX_VENDOR_BOOT_RECOVERY)
++		if (Fox_Zip_Installer_Code == 1) {
++			twrpRepacker repacker;
++			if (!repacker.Flash_Current_Twrp_To_Inactive_Vendor_Boot())
++				gui_warn("safe_reflash_failed=The ROM was installed, but OrangeFox could not be safely injected into its vendor_boot. Reflash recovery manually before using it.");
++		} else {
++			gui_warn("safe_reflash_skipped=Automatic OrangeFox reflash was skipped for a non-standard ROM installer.");
++		}
++	#else
++		if (TWFunc::IsRecoveryOverwritten()) {
++			twrpRepacker repacker;
++			repacker.Flash_Current_Twrp();
++			TWFunc::IsRecoveryOverwritten(true);
++		}
++	#endif
+ 	}
+ #endif
+          PartitionManager.Update_System_Details();
+diff --git a/orangefox.mk b/orangefox.mk
+index ecc586df..1dfb1c6c 100644
+--- a/orangefox.mk
++++ b/orangefox.mk
+@@ -567,6 +567,12 @@ else
+     LOCAL_CFLAGS += -DOF_DEFAULT_TIMEZONE='"CET-1;CEST,M3.5.0,M10.5.0"'
+ endif
+ 
++# Some devices keep OrangeFox settings outside userdata. Allow the device tree
++# to override a stale saved timezone on every recovery boot.
++ifneq ($(OF_FORCE_TIMEZONE),)
++    LOCAL_CFLAGS += -DOF_FORCE_TIMEZONE='"$(OF_FORCE_TIMEZONE)"'
++endif
++
+ # support fs compression (requires kernel support and appropriate fstab flags)
+ ifeq ($(TW_ENABLE_FS_COMPRESSION),true)
+   OF_ENABLE_FS_COMPRESSION := 1
+diff --git a/partition.cpp b/partition.cpp
+index 5185200f..574c950f 100644
+--- a/partition.cpp
++++ b/partition.cpp
+@@ -37,6 +37,7 @@
+ #include <zlib.h>
+ #include <sstream>
+ #include <android-base/properties.h>
++#include <fs_mgr_dm_linear.h>
+ #include <libsnapshot/snapshot.h>
+ 
+ #include "cutils/properties.h"
+@@ -2267,12 +2268,62 @@ bool TWPartition::Wipe_Encryption() {
+ 	}
+ 
+ #ifdef TW_INCLUDE_CRYPTO
++	/*
++	 * The CMF Phone 1 recovery starts a ROM-matched Trustonic stack so that
++	 * metadata-encrypted userdata can be decrypted. mcDriverDaemon keeps its
++	 * secure storage open below /data/vendor/mcRegistry. A lazy unmount can
++	 * therefore succeed while the underlying dm-default-key device remains
++	 * open, causing make_f2fs to abort with "In use by the system".
++	 *
++	 * Stop the recovery-only crypto stack after all pre-wipe/snapshot checks
++	 * have passed. Other devices do not expose twrp.trustonic.setup, so this is
++	 * a no-op outside the device-specific recovery configuration.
++	 */
++	if (!android::base::GetProperty("init.svc.twrp.trustonic.setup", "").empty()) {
++		LOGINFO("Stopping recovery crypto services before formatting userdata\n");
++		android::base::SetProperty("ctl.stop", "keystore2");
++		android::base::SetProperty("ctl.stop", "twrp.trustonic.setup");
++
++		int wait_count = 0;
++		while (wait_count < 50) {
++			const std::string keystore_state =
++				android::base::GetProperty("init.svc.keystore2", "stopped");
++			const std::string trustonic_state =
++				android::base::GetProperty("init.svc.twrp.trustonic.setup", "stopped");
++			if (keystore_state != "running" && keystore_state != "restarting" &&
++				trustonic_state != "running" && trustonic_state != "restarting")
++				break;
++			usleep(100000);
++			++wait_count;
++		}
++
++		if (android::base::GetProperty("init.svc.keystore2", "stopped") == "running" ||
++			android::base::GetProperty("init.svc.twrp.trustonic.setup", "stopped") == "running") {
++			LOGERR("Recovery crypto services did not stop; refusing unsafe userdata format\n");
++			return false;
++		}
++		android::base::SetProperty("recovery.trustonic.ready", "0");
++	}
++
+ 	if (!UnMount(true))
+ 		return false;
+ 	if (Is_Decrypted && !Decrypted_Block_Device.empty()) {
+-//		if (delete_crypto_blk_dev((char*)("userdata")) != 0) {
+-//			LOGERR("Error deleting crypto block device, continuing anyway.\n");
+-//		}
++		const std::string decrypted_block_device = Decrypted_Block_Device;
++		const size_t slash = decrypted_block_device.find_last_of('/');
++		const std::string mapper_name =
++			slash == std::string::npos ? decrypted_block_device : decrypted_block_device.substr(slash + 1);
++
++		if (decrypted_block_device.rfind("/dev/block/mapper/", 0) == 0 &&
++			TWFunc::Path_Exists(decrypted_block_device)) {
++			LOGINFO("Removing metadata-encryption mapping '%s' before formatting userdata\n",
++				mapper_name.c_str());
++			if (!android::fs_mgr::DestroyLogicalPartition(mapper_name)) {
++				LOGERR("Unable to remove metadata-encryption mapping '%s'; refusing unsafe userdata format\n",
++					mapper_name.c_str());
++				return false;
++			}
++			usleep(100000);
++		}
+ 	}
+ #endif
+ 	Has_Data_Media = false;
+@@ -3429,8 +3480,12 @@ void TWPartition::Recreate_Media_Folder(void) {
+ 	string Media_Path = Mount_Point + "/media";
+ 
+ 	if (Is_FBE) {
++	#ifndef OF_BIND_MOUNT_SDCARD_ON_FORMAT
+ 		LOGINFO("Not recreating media folder on FBE\n");
+ 		return;
++	#else
++		LOGINFO("Recreating data/media for the post-format recovery session on FBE\n");
++	#endif
+ 	}
+ 	if (!Mount(true)) {
+ 		gui_msg(Msg(msg::kError, "recreate_folder_err=Unable to recreate {1} folder.")(Media_Path));
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 73a16d99..1a0022a0 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -675,7 +675,26 @@ void TWPartitionManager::Decrypt_Data() {
+ 	#ifdef TW_INCLUDE_CRYPTO
+ 	TWPartition* Decrypt_Data = Find_Partition_By_Path("/data");
+ 	if (Decrypt_Data && Decrypt_Data->Is_Encrypted && !Decrypt_Data->Is_Decrypted) {
++		// Publish FBE state before waiting for the asynchronous vendor stack.
++		// ro.crypto.type is write-once; setting the legacy "block" value first
++		// prevents Trustonic's FBE initialization trigger from ever firing.
+ 		Set_Crypto_State();
++		Set_Crypto_Type("file");
++
++		// TWRP creates the logical vendor mapping, then the recovery-only setup
++		// service starts the ROM-matched Trustonic stack from it. Wait for that
++		// bounded handshake on the first decrypt attempt instead of permanently
++		// abandoning metadata decryption at boot.
++		int trustonic_wait = 0;
++		while (android::base::GetProperty("recovery.trustonic.ready", "0") != "1" &&
++		       trustonic_wait < 150) {
++			usleep(100000);
++			++trustonic_wait;
++		}
++		if (android::base::GetProperty("recovery.trustonic.ready", "0") != "1") {
++			LOGINFO("Trustonic crypto stack did not stabilize after 15 seconds; skipping boot-time metadata decryption\n");
++			return;
++		}
+ 		TWPartition* Key_Directory_Partition = Find_Partition_By_Path(Decrypt_Data->Key_Directory);
+ 		if (Key_Directory_Partition != nullptr)
+ 			if (!Key_Directory_Partition->Is_Mounted())
+@@ -686,7 +705,21 @@ void TWPartitionManager::Decrypt_Data() {
+ #ifdef USE_FSCRYPT
+ 			std::vector<std::string> user_devices;
+ 			std::vector<bool> device_aliased;
+-			if (android::vold::fscrypt_mount_metadata_encrypted(Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point, false, false, Decrypt_Data->Current_File_System, false, user_devices, device_aliased, 0, TWFunc::Path_Exists(additional_fstab) ? additional_fstab : "")) {
++			// The readiness property requires all crypto services to remain
++			// stable, but allow a short retry window for Binder registration.
++			bool metadata_decrypted = false;
++			for (int attempt = 0; attempt < 1 && !metadata_decrypted; ++attempt) {
++				LOGINFO("Starting metadata decryption attempt %d/1\n", attempt + 1);
++				metadata_decrypted = android::vold::fscrypt_mount_metadata_encrypted(
++					Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point,
++					false, false, Decrypt_Data->Current_File_System, false,
++					user_devices, device_aliased, 0,
++					TWFunc::Path_Exists("/etc/recovery.fstab") ? "/etc/recovery.fstab" :
++					(TWFunc::Path_Exists(additional_fstab) ? additional_fstab : ""));
++				LOGINFO("Metadata decryption attempt %d/1 returned %s\n",
++					attempt + 1, metadata_decrypted ? "success" : "failure");
++			}
++			if (metadata_decrypted) {
+ 				std::string crypto_blkdev = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "error");
+ 				Decrypt_Data->Decrypted_Block_Device = crypto_blkdev;
+ 				LOGINFO("Successfully decrypted metadata encrypted data partition with new block device: '%s'\n", crypto_blkdev.c_str());
+@@ -1954,6 +1987,8 @@ int TWPartitionManager::Format_Data(void) {
+ 	TWPartition* dat = Find_Partition_By_Path("/data");
+ 	TWPartition* metadata = Find_Partition_By_Path("/metadata");
+ 	bool ret = false;
++	const bool restart_mtp = DataManager::GetIntValue("tw_mtp_enabled") != 0;
++
+ 	if (metadata != NULL)
+ 		metadata->UnMount(false);
+ 
+@@ -1971,6 +2006,13 @@ int TWPartitionManager::Format_Data(void) {
+ 			if (!Check_Pending_Merges())
+ 				return false;
+ 		}
++		/*
++		 * A Format Data operation replaces the directory tree backing internal
++		 * storage. Stop MTP only after the pre-wipe safety checks pass so an
++		 * aborted snapshot check cannot leave USB storage disabled.
++		 */
++		if (restart_mtp)
++			Disable_MTP();
+ 		ret = dat->Wipe_Encryption();
+ 	} else {
+ 		gui_msg(Msg(msg::kError, "unable_to_locate=Unable to locate {1}.")("/data"));
+@@ -1978,6 +2020,29 @@ int TWPartitionManager::Format_Data(void) {
+ 	}
+ 
+ 	if (ret) {
++		#ifdef OF_BIND_MOUNT_SDCARD_ON_FORMAT
++		/*
++		 * Wipe_Encryption() temporarily clears Has_Data_Media and the old MTP
++		 * registration while mkfs is running. Restore the complete data-media
++		 * state here so MTP and the file browser both resolve to user 0.
++		 */
++		const std::string internal_path = "/data/media/0";
++		DataManager::SetValue(TW_INTERNAL_PATH, internal_path);
++		dat->Recreate_Media_Folder();
++		dat->Setup_Data_Media();
++		if (!dat->Mount(true)) {
++			LOGERR("Unable to mount /data after rebuilding post-format internal storage\n");
++		} else if (!TWFunc::Path_Exists(internal_path)) {
++			LOGERR("Post-format internal storage path '%s' was not created\n",
++				internal_path.c_str());
++		} else {
++			DataManager::SetValue("tw_storage_path", internal_path);
++			DataManager::SetValue("tw_settings_path", Fox_Home);
++			LOGINFO("Post-format internal storage is ready at %s\n",
++				internal_path.c_str());
++		}
++		#endif
++
+ 		#ifdef OF_WIPE_METADATA_AFTER_DATAFORMAT
+ 		usleep(2048);
+ 		Wipe_By_Path("/metadata");
+@@ -1985,6 +2050,12 @@ int TWPartitionManager::Format_Data(void) {
+ 		#endif
+ 		TWFunc::check_and_run_script(TW_FORMAT_DATA_SCRIPT, "Format Data Script");
+ 	}
++
++	if (restart_mtp) {
++		usleep(250000);
++		if (!Enable_MTP())
++			Disable_MTP();
++	}
+ 	return ret;
+ }
+ 
+@@ -2340,13 +2411,37 @@ int TWPartitionManager::Decrypt_Device(string Password, int user_id) {
+ 	}
+     }
+ 
+-  property_set("orangefox.mount_to_decrypt", "1");
+-  Set_Crypto_State();
+-  Set_Crypto_Type("block");
++	property_set("orangefox.mount_to_decrypt", "1");
++	Set_Crypto_State();
+ 
+-  if (DataManager::GetIntValue(TW_IS_FBE))
++	if (DataManager::GetIntValue(TW_IS_FBE))
+     {
+ #ifdef TW_INCLUDE_FBE
++		// A password request can arrive before the initial asynchronous
++		// Trustonic/KeyMint handshake completes. Ensure metadata encryption
++		// has produced the dm-default-key mapping before attempting FBE user
++		// credential decryption.
++		TWPartition* data_partition = Find_Partition_By_Path("/data");
++		std::string metadata_block = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "");
++		bool metadata_ready = !metadata_block.empty() && metadata_block != "error" &&
++			TWFunc::Path_Exists(metadata_block);
++		if (data_partition && data_partition->Is_Encrypted && !metadata_ready) {
++			LOGINFO("Metadata is not decrypted yet; retrying before FBE user decryption\n");
++			Decrypt_Data();
++			metadata_block = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "");
++			metadata_ready = !metadata_block.empty() && metadata_block != "error" &&
++				TWFunc::Path_Exists(metadata_block);
++			if (!metadata_ready) {
++				LOGERR("Metadata decryption is still unavailable; cannot decrypt FBE user %d\n", user_id);
++				return -1;
++			}
++		}
++		if (data_partition && metadata_ready) {
++			data_partition->Decrypted_Block_Device = metadata_block;
++			LOGINFO("Using existing metadata-decrypted data block device '%s' for FBE user %d\n",
++				metadata_block.c_str(), user_id);
++		}
++
+ 		if (!Mount_By_Path("/data", true)) // /data has to be mounted for FBE
+ 			return -1;
+ 
+@@ -2399,6 +2494,10 @@ int TWPartitionManager::Decrypt_Device(string Password, int user_id) {
+ 		return -1;
+ 	}
+ 
++	// This is the legacy FDE path. FBE publishes "file" from Decrypt_Data()
++	// before entering the branch above, so never overwrite it with "block".
++	Set_Crypto_Type("block");
++
+ 	char isdecrypteddata[PROPERTY_VALUE_MAX];
+ 	property_get("twrp.decrypt.done", isdecrypteddata, "");
+ 	if (strcmp(isdecrypteddata, "true") == 0) {
+@@ -3181,10 +3280,11 @@ bool TWPartitionManager::Disable_MTP(void) {
+ 	if (mtppid) {
+ 		LOGINFO("Disabling MTP\n");
+ 		int status;
+-		kill(mtppid, SIGKILL);
++		const pid_t old_mtppid = mtppid;
++		kill(old_mtppid, SIGKILL);
+ 		mtppid = 0;
+ 		// We don't care about the exit value, but this prevents a zombie process
+-		waitpid(mtppid, &status, 0);
++		waitpid(old_mtppid, &status, 0);
+ 		close(mtp_write_fd);
+ 		mtp_write_fd = -1;
+ 	}
+@@ -4896,17 +4996,20 @@ bool TWPartitionManager::Check_Pending_Merges() {
+ 		return false;
+ 	}
+ 
+-	if (!Unmap_Super_Devices()) {
+-		LOGERR("Unable to unmap dynamic partitions.\n");
+-		return false;
+-	}
+-
+ 	auto callback = [&]() -> void {
+ 		double progress;
+ 		sm->GetUpdateState(&progress);
+ 		LOGINFO("waiting for merge to complete: %.2f\n", progress);
+ 	};
+ 
++	/*
++	 * HandleImminentDataWipe() owns the Virtual A/B snapshot transition and
++	 * intentionally allows a wipe immediately when no OTA is pending.  Do not
++	 * tear down every logical partition first: vendor-backed recovery services
++	 * can keep the active vendor mapping busy, and treating that expected busy
++	 * mapping as fatal prevents Wipe_Encryption() from ever reaching mkfs.f2fs.
++	 */
++	LOGINFO("checking virtual A/B snapshot state before data wipe\n");
+ 	LOGINFO("checking for merges\n");
+ 	if (!sm->HandleImminentDataWipe(callback)) {
+ 		LOGERR("Unable to check merge status\n");
+diff --git a/prebuilt/Android.mk b/prebuilt/Android.mk
+index e5c69527..0b1caa62 100644
+--- a/prebuilt/Android.mk
++++ b/prebuilt/Android.mk
+@@ -527,8 +527,9 @@ LOCAL_POST_INSTALL_CMD += \
+     cp $(TARGET_OUT_ETC)/selinux/plat_hwservice_contexts $(TARGET_RECOVERY_ROOT_OUT)/system/etc/selinux/plat_hwservice_contexts && \
+     cp $(TARGET_OUT_VENDOR_ETC)/selinux/vndservice_contexts $(TARGET_RECOVERY_ROOT_OUT)/vendor/etc/selinux/vndservice_contexts && \
+     cp $(TARGET_OUT_VENDOR_ETC)/selinux/vendor_hwservice_contexts $(TARGET_RECOVERY_ROOT_OUT)/vendor/etc/selinux/vendor_hwservice_contexts && \
+-    cp $(TARGET_OUT_ETC)/selinux/plat_keystore2_key_contexts $(TARGET_RECOVERY_ROOT_OUT)/system/etc/selinux/plat_keystore2_key_contexts
+-#    cp $(TARGET_OUT_ETC)/task_profiles.json $(TARGET_RECOVERY_ROOT_OUT)/system/etc/task_profiles/task_profiles_30.json
++    cp $(TARGET_OUT_ETC)/selinux/plat_keystore2_key_contexts $(TARGET_RECOVERY_ROOT_OUT)/system/etc/selinux/plat_keystore2_key_contexts && \
++    cp $(TARGET_OUT_ETC)/task_profiles.json $(TARGET_RECOVERY_ROOT_OUT)/system/etc/task_profiles.json && \
++    rm -f $(TARGET_RECOVERY_ROOT_OUT)/system/etc/vintf/manifest/android.hardware.health-service.example_recovery.xml
+ 
+     ifeq ($(TARGET_USES_MKE2FS), true)
+         LOCAL_POST_INSTALL_CMD += \
+diff --git a/twrp-functions.cpp b/twrp-functions.cpp
+index 34048232..a52c3775 100755
+--- a/twrp-functions.cpp
++++ b/twrp-functions.cpp
+@@ -942,6 +942,7 @@ void TWFunc::GUI_Operation_Text(string Read_Value, string Partition_Name,
+ void TWFunc::Copy_Log(string Source, string Destination) {
+ 	int logPipe[2];
+ 	int pigz_pid;
++	int pigz_status;
+ 	int destination_fd;
+ 	std::string destLogBuffer;
+ 
+@@ -980,9 +981,16 @@ void TWFunc::Copy_Log(string Source, string Destination) {
+ 
+ 	if (pipe(logPipe) < 0) {
+ 		LOGINFO("Unable to open pipe to write to persistent log file: %s\n", Destination.c_str());
++		return;
+ 	}
+ 
+ 	destination_fd = open(Destination.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
++	if (destination_fd < 0) {
++		LOGINFO("Unable to open persistent log file: %s\n", Destination.c_str());
++		close(logPipe[0]);
++		close(logPipe[1]);
++		return;
++	}
+ 
+ 	pigz_pid = fork();
+ 	if (pigz_pid < 0) {
+@@ -990,6 +998,7 @@ void TWFunc::Copy_Log(string Source, string Destination) {
+ 		close(destination_fd);
+ 		close(logPipe[0]);
+ 		close(logPipe[1]);
++		return;
+ 	} else if (pigz_pid == 0) {
+ 		close(logPipe[1]);
+ 		dup2(logPipe[0], fileno(stdin));
+@@ -1000,20 +1009,25 @@ void TWFunc::Copy_Log(string Source, string Destination) {
+ 			_exit(-1);
+ 		}
+ 	} else {
++		bool write_failed = false;
+ 		close(logPipe[0]);
+ 		if (write(logPipe[1], destLogBuffer.c_str(), destLogBuffer.size()) < 0) {
+ 			LOGINFO("Unable to append to persistent log: %s\n", Destination.c_str());
+-			close(logPipe[1]);
+-			close(destination_fd);
+-			return;
++			write_failed = true;
+ 		}
+-		if (write(logPipe[1], srcLogBuffer.c_str(), srcLogBuffer.size()) < 0) {
++		if (!write_failed &&
++		    write(logPipe[1], srcLogBuffer.c_str(), srcLogBuffer.size()) < 0) {
+ 			LOGINFO("Unable to append to persistent log: %s\n", Destination.c_str());
+-			close(logPipe[1]);
+-			close(destination_fd);
+-			return;
++			write_failed = true;
+ 		}
+ 		close(logPipe[1]);
++		close(destination_fd);
++
++		// Copy_Log runs during startup and shutdown. Reap pigz here so each
++		// invocation cannot leave a defunct child owned by the recovery process.
++		if (Wait_For_Child(pigz_pid, &pigz_status, "pigz", false) != 0)
++			LOGINFO("Unable to finish compressing persistent log: %s\n", Destination.c_str());
++		return;
+ 	}
+ 	close(destination_fd);
+ }
+@@ -4979,17 +4993,6 @@ void TWFunc::Mapper_to_BootDevice(const std::string block_device, const std::str
+ }
+ 
+ void TWFunc::PostWipeEncryption(void) {
+-#ifdef OF_BIND_MOUNT_SDCARD_ON_FORMAT
+-	// deal with MTP issues after formatting data
+-	std::string dir = "/data/media/0";
+-	LOGINFO("Recreating %s...\n", dir.c_str());
+-	TWFunc::Recursive_Mkdir(dir, false);
+-	chmod(dir.c_str(), 0770);
+-	PartitionManager.Add_MTP_Storage("/data/media");
+-	// bind mount: this can be problematic for encryption
+-	LOGINFO("Bind mounting /data/media/0 to /sdcard after formatting\n");
+-	mount(dir.c_str(), "/sdcard", "", MS_BIND, NULL);
+-#endif
+ 	// run the OrangeFox postformatdata script here
+ 	TWFunc::RunFoxScript(FOX_POST_DATA_FORMAT_SCRIPT, "");
+ }
+diff --git a/twrp.cpp b/twrp.cpp
+index ad3ead43..ff7bc971 100644
+--- a/twrp.cpp
++++ b/twrp.cpp
+@@ -249,7 +249,14 @@ static void process_recovery_mode(twrpAdbBuFifo* adb_bu_fifo, bool skip_decrypti
+ #endif
+ 
+ #ifdef TW_INCLUDE_CRYPTO
+-	android::keystore::copySqliteDb();
++	// Android 16 keeps Keystore2's recovery database on tmpfs. The helper is
++	// intentionally safe to call before /data is available and will retry from
++	// the credential-decryption path after metadata encryption is mounted.
++	if (android::base::GetProperty("recovery.trustonic.ready", "0") == "1") {
++		(void)android::keystore::syncKeystoreDb();
++	} else {
++		LOGINFO("Trustonic crypto stack is not ready; deferring Keystore2 sync\n");
++	}
+ #endif
+ 	Decrypt_Page(skip_decryption, datamedia);
+ 
+diff --git a/twrpApex.cpp b/twrpApex.cpp
+index 557283b1..310d712f 100755
+--- a/twrpApex.cpp
++++ b/twrpApex.cpp
+@@ -97,15 +97,21 @@ bool twrpApex::mountApexOnLoopbackDevices(std::vector<std::string> apexFiles) {
+ 		return false;
+ 	}
+ 
+-	size_t device_no = 0;
+ 	for (auto&& apexFile:apexFiles) {
+ 		int num = ioctl(fd, LOOP_CTL_GET_FREE);
++		if (num < 0) {
++			LOGERR("Unable to allocate a loop device. Reason: %s\n", strerror(errno));
++			close(fd);
++			return false;
++		}
+ 		std::string loop_device = LOOP_BLOCK_DEVICE_DIR;
+ 		loop_device = loop_device + "loop" + std::to_string(num);
+ 		if (!TWFunc::Path_Exists(loop_device)) {
+-			int ret = mknod(loop_device.c_str(), S_IFBLK | S_IRUSR | S_IWUSR , makedev(7, device_no));
++			int ret = mknod(loop_device.c_str(), S_IFBLK | S_IRUSR | S_IWUSR,
++					makedev(7, num));
+ 			if (ret != 0) {
+ 				LOGERR("Unable to create loop device: %s\n", loop_device.c_str());
++				close(fd);
+ 				return false;
+ 			}
+ 		}
+@@ -114,12 +120,13 @@ bool twrpApex::mountApexOnLoopbackDevices(std::vector<std::string> apexFiles) {
+ 			LOGINFO("Skipping non-existent apex file: %s\n", apexFile.c_str());
+ 			continue;
+ 		}
+-		bool load_result = loadApexImage(fileToMount, device_no);
++		bool load_result = loadApexImage(fileToMount, num);
+ 		if (!load_result) {
++			close(fd);
+ 			return false;
+ 		}
+-		device_no++;
+ 	}
++	close(fd);
+ 	return true;
+ }
+ 
+@@ -132,8 +139,16 @@ bool twrpApex::loadApexImage(std::string fileToMount, size_t loop_device_number)
+ 		return false;
+ 	}
+ 
++	off_t apex_size = lseek(fd, 0, SEEK_END);
++	if (apex_size < 0) {
++		LOGERR("unable to determine apex payload size: %s. Reason: %s\n",
++			fileToMount.c_str(), strerror(errno));
++		close(fd);
++		return false;
++	}
++
+ 	std::string loop_device = "/dev/block/loop" + std::to_string(loop_device_number);
+-	int loop_fd = open(loop_device.c_str(), O_RDONLY);
++	int loop_fd = open(loop_device.c_str(), O_RDWR | O_CLOEXEC);
+ 	if (loop_fd < 0) {
+ 		LOGERR("unable to open loop device: %s\n", loop_device.c_str());
+ 		close(fd);
+@@ -148,20 +163,19 @@ bool twrpApex::loadApexImage(std::string fileToMount, size_t loop_device_number)
+ 		return false;
+ 	}
+ 
+-	close(fd);
+-
+ 	memset(&info, 0, sizeof(struct loop_info64));
+ 	strlcpy((char*)info.lo_crypt_name, "twrpApex", LO_NAME_SIZE);
+-	off_t apex_size = lseek(fd, 0, SEEK_END);
+ 	info.lo_sizelimit = apex_size;
+ 	if (ioctl(loop_fd, LOOP_SET_STATUS64, &info)) {
+ 		LOGERR("failed to mount loop: %s: %s\n", fileToMount.c_str(), strerror(errno));
++		ioctl(loop_fd, LOOP_CLR_FD, 0);
++		close(fd);
+ 		close(loop_fd);
+ 		return false;
+ 	}
++	close(fd);
+ 	if (ioctl(loop_fd, BLKFLSBUF, 0) == -1) {
+-		LOGERR("Unable to flush loop device buffers\n");
+-		return false;
++		LOGINFO("Unable to flush loop device buffers: %s\n", strerror(errno));
+ 	}
+ 	if (ioctl(loop_fd, LOOP_SET_BLOCK_SIZE, 4096) == -1) {
+ 		LOGINFO("Failed to set DIRECT_IO buffer size\n");
+@@ -174,8 +188,8 @@ bool twrpApex::loadApexImage(std::string fileToMount, size_t loop_device_number)
+ 
+ 	bind_mount = bind_mount + basename(apex_cleaned_mount.c_str());
+ 
+-	int ret = mkdir(bind_mount.c_str(), 0666);
+-	if (ret != 0) {
++	int ret = mkdir(bind_mount.c_str(), 0755);
++	if (ret != 0 && errno != EEXIST) {
+ 		LOGERR("Unable to create bind mount directory: %s\n", bind_mount.c_str());
+ 		return false;
+ 	}
+diff --git a/twrpRepacker.cpp b/twrpRepacker.cpp
+index ca3f8243..79add80b 100755
+--- a/twrpRepacker.cpp
++++ b/twrpRepacker.cpp
+@@ -115,6 +115,23 @@ std::string twrpRepacker::Unpack_Image(const std::string& Source_Path, const std
+ 			}
+ 		}
+ 	}
++	// MagiskBoot 28+ reports each vendor ramdisk fragment separately, e.g.
++	// "type=[recovery] ... fmt=[lz4_legacy]", instead of RAMDISK_FMT.
++	if (ramdisk_format.empty()) {
++		pos = magisk_unpack_output.find("type=[recovery]");
++		if (pos != std::string::npos) {
++			auto line_end = magisk_unpack_output.find('\n', pos);
++			auto start = magisk_unpack_output.find("fmt=[", pos);
++			if (start != std::string::npos &&
++			    (line_end == std::string::npos || start < line_end)) {
++				start += 5;
++				auto end = magisk_unpack_output.find(']', start);
++				if (end != std::string::npos &&
++				    (line_end == std::string::npos || end < line_end))
++					ramdisk_format = magisk_unpack_output.substr(start, end - start);
++			}
++		}
++	}
+ 	return ramdisk_format;
+ }
+ 
+@@ -134,6 +151,7 @@ bool twrpRepacker::Repack_Image_And_Flash(const std::string& Target_Image, const
+ 	bool recompress = false;
+ 	bool is_vendor_boot = false;
+ 	bool is_vendor_boot_v4 = false;
++	bool switched_slots = false;
+ 	std::string dest_partition = "/boot";
+ 	std::string ramdisk_cpio = "ramdisk.cpio";
+ 
+@@ -142,9 +160,6 @@ bool twrpRepacker::Repack_Image_And_Flash(const std::string& Target_Image, const
+ 		is_vendor_boot = true;
+ 		if (DataManager::GetIntValue("tw_boot_header_version") > 3) {
+ 			is_vendor_boot_v4 = true;
+-			ramdisk_cpio = "vendor_ramdisk_recovery.cpio";
+-			if (!TWFunc::Path_Exists(ramdisk_cpio) && TWFunc::Path_Exists("vendor_ramdisk/recovery.cpio"))
+-				ramdisk_cpio = "vendor_ramdisk/recovery.cpio";
+ 			LOGINFO("Vendor_boot with v4+ header\n");
+ 		} else {
+ 			LOGINFO("Vendor_boot with lower than v4 header\n");
+@@ -172,10 +187,27 @@ bool twrpRepacker::Repack_Image_And_Flash(const std::string& Target_Image, const
+ 	}
+ 	if (!Backup_Image_For_Repack(part, REPACK_ORIG_DIR, Repack_Options.Backup_First, gui_lookup("repack", "Repack")))
+ 		return false;
++	if (is_vendor_boot_v4) {
++		// MagiskBoot 28+ stores named v4 fragments in a directory. Detect the
++		// layout only after unpacking and abort before flashing if the target
++		// ROM does not contain a named recovery fragment.
++		if (TWFunc::Path_Exists(REPACK_ORIG_DIR "vendor_ramdisk/recovery.cpio"))
++			ramdisk_cpio = "vendor_ramdisk/recovery.cpio";
++		else if (TWFunc::Path_Exists(REPACK_ORIG_DIR "vendor_ramdisk_recovery.cpio"))
++			ramdisk_cpio = "vendor_ramdisk_recovery.cpio";
++		else {
++			LOGERR("Target vendor_boot has no named recovery ramdisk fragment; refusing to repack\n");
++			TWFunc::removeDir(REPACK_ORIG_DIR, false);
++			return false;
++		}
++	}
+ 	DataManager::SetProgress(.25);
+ 	if (Repack_Options.Type == REPLACE_RAMDISK_UNPACKED) {
+ 		if (!Prepare_Empty_Folder(REPACK_NEW_DIR))
+ 			return false;
++		if (ramdisk_cpio == "vendor_ramdisk/recovery.cpio" &&
++		    !TWFunc::Recursive_Mkdir(REPACK_NEW_DIR "vendor_ramdisk"))
++			return false;
+ 		image_ramdisk_format = "gzip";
+ 	} else {
+ 		gui_msg(Msg("unpacking_image=Unpacking {1}...")(Target_Image));
+@@ -254,8 +286,10 @@ bool twrpRepacker::Repack_Image_And_Flash(const std::string& Target_Image, const
+ 		return false;
+ 	}
+ 	DataManager::SetProgress(1);
+-	if (part->Is_SlotSelect() && (Repack_Options.Type == REPLACE_RAMDISK || Repack_Options.Type == REPLACE_RAMDISK_UNPACKED)) {
++	if (Repack_Options.Flash_Both_Slots && part->Is_SlotSelect() &&
++	    (Repack_Options.Type == REPLACE_RAMDISK || Repack_Options.Type == REPLACE_RAMDISK_UNPACKED)) {
+ 		LOGINFO("Switching slots to flash ramdisk to both partitions\n");
++		switched_slots = true;
+ 		string Current_Slot = PartitionManager.Get_Active_Slot_Display();
+ 		if (Current_Slot == "A")
+ 			PartitionManager.Override_Active_Slot("B");
+@@ -313,15 +347,124 @@ bool twrpRepacker::Repack_Image_And_Flash(const std::string& Target_Image, const
+ 	TWFunc::removeDir(REPACK_NEW_DIR, false);
+ 	if (dest_partition == "/boot")
+ 		gui_msg(Msg(msg::kWarning, "repack_overwrite_warning=If device was previously rooted, then root has been overwritten and will need to be reinstalled."));
+-	string Current_Slot = PartitionManager.Get_Active_Slot_Display();
+-	if (Current_Slot == "A")
+-		PartitionManager.Override_Active_Slot("B");
+-	else
+-		PartitionManager.Override_Active_Slot("A");
++	if (switched_slots) {
++		string Current_Slot = PartitionManager.Get_Active_Slot_Display();
++		if (Current_Slot == "A")
++			PartitionManager.Override_Active_Slot("B");
++		else
++			PartitionManager.Override_Active_Slot("A");
++	}
+ 	return true;
+ }
+ 
++bool twrpRepacker::Flash_Current_Twrp_To_Inactive_Vendor_Boot() {
++#if defined(FOX_VENDOR_BOOT_RECOVERY) || defined(BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT)
++	if (DataManager::GetIntValue("tw_boot_header_version") < 4) {
++		LOGERR("Safe vendor_boot recovery injection requires boot header v4 or newer\n");
++		return false;
++	}
++	const std::string verified_boot_state =
++		android::base::GetProperty("ro.boot.verifiedbootstate", "");
++	const std::string vbmeta_device_state =
++		android::base::GetProperty("ro.boot.vbmeta.device_state", "");
++	if (verified_boot_state == "green" || vbmeta_device_state == "locked") {
++		LOGERR("Refusing vendor_boot recovery injection while verified boot is locked\n");
++		return false;
++	}
++
++	std::string booted_slot = android::base::GetProperty("ro.boot.slot_suffix", "");
++	if (booted_slot.empty())
++		booted_slot = android::base::GetProperty("ro.boot.slot", "");
++
++	std::string booted_slot_display;
++	if (booted_slot == "_a" || booted_slot == "a")
++		booted_slot_display = "A";
++	else if (booted_slot == "_b" || booted_slot == "b")
++		booted_slot_display = "B";
++	else {
++		LOGERR("Cannot safely determine the booted slot for vendor_boot recovery injection\n");
++		return false;
++	}
++
++	const std::string target_slot = booted_slot_display == "A" ? "B" : "A";
++	std::string previous_selected_slot = PartitionManager.Get_Active_Slot_Display();
++	if (previous_selected_slot != "A" && previous_selected_slot != "B")
++		previous_selected_slot = booted_slot_display;
++
++	LOGINFO("Safe vendor_boot recovery injection: booted slot %s, target slot %s\n",
++		booted_slot_display.c_str(), target_slot.c_str());
++	PartitionManager.Override_Active_Slot(target_slot);
++
++	auto restore_selected_slot = [&]() {
++		if (PartitionManager.Get_Active_Slot_Display() != previous_selected_slot)
++			PartitionManager.Override_Active_Slot(previous_selected_slot);
++	};
++
++	TWPartition* target_part = PartitionManager.Find_Partition_By_Path("/vendor_boot");
++	const std::string expected_suffix = target_slot == "A" ? "_a" : "_b";
++	if (!target_part || !target_part->Is_SlotSelect() ||
++	    target_part->Actual_Block_Device.size() < expected_suffix.size() ||
++	    target_part->Actual_Block_Device.compare(
++		target_part->Actual_Block_Device.size() - expected_suffix.size(),
++		expected_suffix.size(), expected_suffix) != 0) {
++		LOGERR("Refusing vendor_boot injection: selected block device is not target slot %s\n",
++			target_slot.c_str());
++		restore_selected_slot();
++		return false;
++	}
++
++	if (!TWFunc::Path_Exists("/ramdisk-files.txt")) {
++		LOGERR("Cannot find ramdisk-files.txt for vendor_boot recovery injection\n");
++		restore_selected_slot();
++		return false;
++	}
++
++	if (PartitionManager.Is_Mounted_By_Path("/vendor") &&
++	    !PartitionManager.UnMount_By_Path("/vendor", false)) {
++		PartitionManager.UnMount_By_Path("/vendor", false, MNT_FORCE | MNT_DETACH);
++	}
++
++	PartitionManager.Unlock_Block_Partitions();
++	Repack_Options_struct Repack_Options;
++	Repack_Options.Disable_Verity = false;
++	Repack_Options.Disable_Force_Encrypt = false;
++	Repack_Options.Type = REPLACE_RAMDISK_UNPACKED;
++	Repack_Options.Backup_First = DataManager::GetIntValue("tw_repack_backup_first") != 0;
++	Repack_Options.Flash_Both_Slots = false;
++
++	#ifdef OF_FORCE_CHECK_RAMDISK_CHECKSUM
++	std::string verifyfiles = "cd / && sha256sum --status -c ramdisk-files.sha256sum";
++	if (TWFunc::Exec_Cmd(verifyfiles) != 0) {
++		gui_msg(Msg(msg::kError, "modified_ramdisk_error=ramdisk files have been modified: unable to create ramdisk to flash."));
++		restore_selected_slot();
++		return false;
++	}
++	#endif
++
++	std::string command = "cd / && /system/bin/cpio -H newc -o < ramdisk-files.txt > /tmp/currentramdisk.cpio && /system/bin/gzip -f /tmp/currentramdisk.cpio";
++	if (TWFunc::Exec_Cmd(command) != 0) {
++		gui_msg(Msg(msg::kError, "create_ramdisk_error=failed to create ramdisk to flash."));
++		restore_selected_slot();
++		return false;
++	}
++
++	const bool result = Repack_Image_And_Flash("/tmp/currentramdisk.cpio.gz", Repack_Options);
++	restore_selected_slot();
++	if (result)
++		gui_msg("safe_reflash_complete=OrangeFox recovery was injected into the ROM-installed slot without replacing its platform ramdisk.");
++	return result;
++#else
++	LOGERR("Inactive vendor_boot recovery injection requested on a non-vendor_boot build\n");
++	return false;
++#endif
++}
++
+ bool twrpRepacker::Flash_Current_Twrp() {
++	#if defined(FOX_VENDOR_BOOT_RECOVERY) || defined(BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT)
++	if (DataManager::GetIntValue("tw_boot_header_version") > 3)
++		return Flash_Current_Twrp_To_Inactive_Vendor_Boot();
++	#endif
++
+ #ifndef OF_RECOVERY_AB_FULL_REFLASH_RAMDISK
+ 	// A/B with dedicated recovery partition
+ 	std::string slot = android::base::GetProperty("ro.boot.slot_suffix", "");
+diff --git a/twrpRepacker.hpp b/twrpRepacker.hpp
+index e71f3dcb..433b316c 100755
+--- a/twrpRepacker.hpp
++++ b/twrpRepacker.hpp
+@@ -34,6 +34,9 @@ struct Repack_Options_struct {
+ 	bool Backup_First;
+ 	bool Disable_Verity;
+ 	bool Disable_Force_Encrypt;
++	// vendor_boot contains ROM platform data as well as recovery. Callers that
++	// preserve a newly installed ROM must not clone the full image to both slots.
++	bool Flash_Both_Slots = true;
+ };
+ 
+ class twrpRepacker {
+@@ -42,6 +45,7 @@ class twrpRepacker {
+         std::string Unpack_Image(const std::string& Source_Path, const std::string& Temp_Folder_Destination, const bool Copy_Source, const bool Create_Destination = true); // Prepares an image for repacking by unpacking it to the temp folder destination and return the ramdisk format
+         bool Repack_Image_And_Flash(const std::string& Target_Image, const struct Repack_Options_struct& Repack_Options); // Repacks the boot image with a new kernel or a new ramdisk
+         bool Flash_Current_Twrp();
++        bool Flash_Current_Twrp_To_Inactive_Vendor_Boot();
+     private:
+     	bool Prepare_Empty_Folder(const std::string& Folder); // Creates an empty folder at Folder. If the folder already exists, the folder is deleted, then created
+     	std::string original_ramdisk_format;                  // Ramdisk format of boot partition
+diff --git a/twrpinstall/adb_install.cpp b/twrpinstall/adb_install.cpp
+index d9a517f0..89f6910a 100755
+--- a/twrpinstall/adb_install.cpp
++++ b/twrpinstall/adb_install.cpp
+@@ -24,6 +24,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sys/epoll.h>
++#include <sys/mount.h>
+ #include <sys/socket.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
+@@ -31,6 +32,7 @@
+ #include <unistd.h>
+ 
+ #include <atomic>
++#include <chrono>
+ #include <functional>
+ #include <map>
+ #include <utility>
+@@ -44,6 +46,7 @@
+ #include <android-base/unique_fd.h>
+ 
+ #include "fuse_sideload.h"
++#include "data.hpp"
+ #include "twinstall/install.h"
+ #include "twinstall.h"
+ #include "twinstall/wipe_data.h"
+@@ -58,15 +61,73 @@
+ // always be sent to the minadbd side.
+ using CommandFunction = std::function<std::pair<bool, bool>()>;
+ 
+-pid_t child;
++enum class MinadbdMessageResult {
++  kContinue,
++  kStop,
++  kError,
++};
++
++static std::atomic<pid_t> child{ 0 };
+ 
+ pid_t GetMiniAdbdPid() {
+-  return child;
++  return child.load();
+ }
+ 
+-static bool SetUsbConfig(const std::string& state) {
++static bool WaitForMinadbd(pid_t pid, int timeout_millis, int* status) {
++  constexpr int kPollIntervalMillis = 25;
++  for (int elapsed = 0; elapsed < timeout_millis; elapsed += kPollIntervalMillis) {
++    const pid_t waited = waitpid(pid, status, WNOHANG);
++    if (waited == pid) return true;
++    if (waited == -1) {
++      if (errno == EINTR) continue;
++      if (errno == ECHILD) return true;
++      PLOG(ERROR) << "Failed to poll minadbd process " << pid;
++      return false;
++    }
++    usleep(kPollIntervalMillis * 1000);
++  }
++  return false;
++}
++
++static bool TerminateAndReapMinadbd(pid_t pid, int* status) {
++  if (pid <= 0) return true;
++
++  // minadbd writes the final DONEDONE response to the host, then waits up to
++  // three seconds for the host socket to close. Allow that protocol to finish
++  // before escalating, while keeping every wait bounded.
++  if (WaitForMinadbd(pid, 4000, status)) return true;
++
++  LOG(INFO) << "minadbd did not exit after sideload; sending SIGTERM";
++  kill(pid, SIGTERM);
++  if (WaitForMinadbd(pid, 500, status)) return true;
++
++  LOG(WARNING) << "minadbd ignored SIGTERM; sending SIGKILL";
++  kill(pid, SIGKILL);
++  const pid_t waited = TEMP_FAILURE_RETRY(waitpid(pid, status, 0));
++  if (waited == pid || (waited == -1 && errno == ECHILD)) return true;
++
++  PLOG(ERROR) << "Failed to reap minadbd process " << pid;
++  return false;
++}
++
++static bool SetUsbConfig(
++    const std::string& state,
++    std::chrono::milliseconds timeout = std::chrono::seconds(10)) {
+   android::base::SetProperty("sys.usb.config", state);
+-  return android::base::WaitForProperty("sys.usb.state", state);
++  if (state == "adb") {
++    // Recovery's configfs rule normally starts adbd for this state. Request it
++    // explicitly as well so teardown can recover even if the property trigger
++    // raced the old minadbd FunctionFS endpoint closing.
++    android::base::SetProperty("ctl.start", "adbd");
++  }
++
++  if (android::base::WaitForProperty("sys.usb.state", state, timeout)) return true;
++
++  LOG(ERROR) << "Timed out waiting for USB state " << state
++             << "; current config="
++             << android::base::GetProperty("sys.usb.config", "unknown")
++             << ", state=" << android::base::GetProperty("sys.usb.state", "unknown");
++  return false;
+ }
+ 
+ // Parses the minadbd command in |message|; returns MinadbdCommand::kError upon errors.
+@@ -121,14 +182,26 @@ static auto AdbInstallPackageHandler(int* result) {
+       }
+     }
+     int dummy = 0;
++    DataManager::SetValue("tw_action_text1", "Installing sideload package...");
+     *result = TWinstall_zip(FUSE_SIDELOAD_HOST_PATHNAME, &dummy);
+     Fox_Post_Zip_Install(*result);
++    DataManager::SetValue("tw_action_text1", "Finishing ADB sideload...");
++    // OrangeFox exposes sideload as a one-package GUI action. Waiting for a
++    // second minadbd command after sending the result leaves the action open
++    // and makes Close race the worker that owns the child process.
++    should_continue = false;
+     break;
+   }
+ 
+-  // Calling stat() on this magic filename signals the FUSE to exit.
+-  struct stat st;
+-  stat(FUSE_SIDELOAD_HOST_EXIT_PATHNAME, &st);
++  // Signal the FUSE provider to finish before returning the install result to
++  // minadbd. minadbd cannot send DONEDONE to the host until run_fuse_sideload()
++  // exits. The worker's bounded process teardown and the GUI's direct SIGKILL
++  // cancellation path prevent this lookup from recreating the old unbounded
++  // finishing/cancel hang if the FUSE provider is unhealthy.
++  struct stat exit_st;
++  if (stat(FUSE_SIDELOAD_HOST_EXIT_PATHNAME, &exit_st) != 0) {
++    PLOG(WARNING) << "Failed to signal sideload FUSE exit";
++  }
+   return std::make_pair(*result == INSTALL_SUCCESS, should_continue);
+ }
+ 
+@@ -161,24 +234,24 @@ static auto AdbRebootHandler(MinadbdCommand command, int* result,
+ 
+ // Parses and executes the command from minadbd. Returns whether the caller should keep waiting for
+ // next command.
+-static bool HandleMessageFromMinadbd(int socket_fd,
+-                                     const std::map<MinadbdCommand, CommandFunction>& command_map) {
++static MinadbdMessageResult HandleMessageFromMinadbd(
++    int socket_fd, const std::map<MinadbdCommand, CommandFunction>& command_map) {
+   char buffer[kMinadbdMessageSize];
+   if (!android::base::ReadFully(socket_fd, buffer, kMinadbdMessageSize)) {
+     PLOG(ERROR) << "Failed to read message from minadbd";
+-    return false;
++    return MinadbdMessageResult::kError;
+   }
+ 
+   std::string message(buffer, buffer + kMinadbdMessageSize);
+   auto command_type = ParseMinadbdCommand(message);
+   if (command_type == MinadbdCommand::kError) {
+-    return false;
++    return MinadbdMessageResult::kError;
+   }
+   if (command_map.find(command_type) == command_map.end()) {
+     LOG(ERROR) << "Unsupported command: "
+                << android::base::get_unaligned<unsigned int>(
+                       message.substr(strlen(kMinadbdCommandPrefix)).c_str());
+-    return false;
++    return MinadbdMessageResult::kError;
+   }
+ 
+   // We have received a valid command, execute the corresponding function.
+@@ -187,9 +260,9 @@ static bool HandleMessageFromMinadbd(int socket_fd,
+   LOG(INFO) << "Command " << static_cast<uint32_t>(command_type) << " finished with " << result;
+   if (!WriteStatusToFd(result ? MinadbdCommandStatus::kSuccess : MinadbdCommandStatus::kFailure,
+                        socket_fd)) {
+-    return false;
++    return MinadbdMessageResult::kError;
+   }
+-  return should_continue;
++  return should_continue ? MinadbdMessageResult::kContinue : MinadbdMessageResult::kStop;
+ }
+ 
+ // TODO(xunchang) add a wrapper function and kill the minadbd service there.
+@@ -238,10 +311,18 @@ static void ListenAndExecuteMinadbdCommands(
+         kill(minadbd_pid, SIGKILL);
+         return;
+       }
+-      if (!HandleMessageFromMinadbd(socket_fd.get(), command_map)) {
++      const auto message_result = HandleMessageFromMinadbd(socket_fd.get(), command_map);
++      if (message_result == MinadbdMessageResult::kError) {
+         kill(minadbd_pid, SIGKILL);
+         return;
+       }
++      if (message_result == MinadbdMessageResult::kStop) {
++        // The one-package command completed and its status was delivered to
++        // minadbd. Let minadbd send DONEDONE to the host and close naturally;
++        // killing it here makes a successful host report
++        // "failed to read command: Success" instead.
++        return;
++      }
+     }
+   }
+ }
+@@ -291,12 +372,12 @@ static void CreateMinadbdServiceAndExecuteCommands(
+     return;
+   }
+ 
+-  child = fork();
+-  if (child == -1) {
++  const pid_t minadbd_pid = fork();
++  if (minadbd_pid == -1) {
+     PLOG(ERROR) << "Failed to fork child process";
+     return;
+   }
+-  if (child == 0) {
++  if (minadbd_pid == 0) {
+     recovery_socket.reset();
+     std::vector<std::string> minadbd_commands = {
+       "/system/bin/minadbd",
+@@ -311,27 +392,36 @@ static void CreateMinadbdServiceAndExecuteCommands(
+     _exit(EXIT_FAILURE);
+   }
+ 
++  child.store(minadbd_pid);
++
+   minadbd_socket.reset();
+ 
+   // We need to call SetUsbConfig() after forking minadbd service. Because the function waits for
+   // the usb state to be updated, which depends on sys.usb.ffs.ready=1 set in the adb daemon.
+   if (!SetUsbConfig("sideload")) {
+     LOG(ERROR) << "Failed to set usb config to sideload";
++    int failed_status = 0;
++    kill(minadbd_pid, SIGKILL);
++    TerminateAndReapMinadbd(minadbd_pid, &failed_status);
++    if (child.load() == minadbd_pid) child.store(0);
+     return;
+   }
+ 
+-  std::thread listener_thread(ListenAndExecuteMinadbdCommands, child,
++  std::thread listener_thread(ListenAndExecuteMinadbdCommands, minadbd_pid,
+                               std::move(recovery_socket), std::ref(command_map));
+   if (listener_thread.joinable()) {
+     listener_thread.join();
+   }
+ 
+-  int status;
+-  waitpid(child, &status, 0);
+-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
++  int status = 0;
++  const bool reaped = TerminateAndReapMinadbd(minadbd_pid, &status);
++  if (child.load() == minadbd_pid) child.store(0);
++  umount2("/sideload", MNT_DETACH);
++
++  if (reaped && WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+     if (WEXITSTATUS(status) == MinadbdErrorCode::kMinadbdAdbVersionError) {
+       LOG(ERROR) << "\nYou need adb 1.0.32 or newer to sideload\nto this device.\n";
+-    } else if (!WIFSIGNALED(status)) {
++    } else {
+       LOG(ERROR) << "\n(adbd status " << WEXITSTATUS(status) << ")";
+     }
+   }
+@@ -341,10 +431,11 @@ static void CreateMinadbdServiceAndExecuteCommands(
+ 
+   int twrp_sideload(const char* install_file, Device::BuiltinAction* reboot_action) {
+ 
+-  // Save the usb state to restore after the sideload operation.
+-  std::string usb_state = android::base::GetProperty("sys.usb.state", "none");
+   // Clean up state and stop adbd.
+-  if (usb_state != "none" && !SetUsbConfig("none")) {
++  const std::string initial_usb_state =
++      android::base::GetProperty("sys.usb.state", "none");
++  if (initial_usb_state != "none" &&
++      !SetUsbConfig("none", std::chrono::seconds(3))) {
+     LOG(ERROR) << "Failed to clear USB config";
+     return INSTALL_ERROR;
+   }
+@@ -369,14 +460,17 @@ static void CreateMinadbdServiceAndExecuteCommands(
+ 
+   // Clean up before switching to the older state, for example setting the state
+   // to none sets sys/class/android_usb/android0/enable to 0.
+-  if (!SetUsbConfig("none")) {
++  if (!SetUsbConfig("none", std::chrono::seconds(3))) {
+     LOG(ERROR) << "Failed to clear USB config";
+   }
+ 
+-  if (usb_state != "none") {
+-    if (!SetUsbConfig(usb_state)) {
+-      LOG(ERROR) << "Failed to set USB config to " << usb_state;
+-    }
++  // OrangeFox deliberately leaves MTP disabled after sideload. Never restore
++  // the state sampled before entry: Disable_MTP() changes sys.usb.config
++  // asynchronously, so that sample can still be the stale "mtp,adb" state
++  // even though its MTP FunctionFS server has already exited. Waiting for that
++  // impossible state was the remaining v24 finishing/cancel deadlock.
++  if (!SetUsbConfig("adb", std::chrono::seconds(10))) {
++    LOG(ERROR) << "Failed to restore adb-only USB config after sideload";
+   }
+ 
+   return install_result;

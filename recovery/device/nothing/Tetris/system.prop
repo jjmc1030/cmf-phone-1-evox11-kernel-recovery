@@ -7,6 +7,13 @@ ro.postinstall.fstab.prefix=/system
 # USB MTP
 ro.sys.usb.storage.type=mtp
 
+# Keep a recovery-only crash diagnosable.  Android init normally reboots after
+# four rapid crashes of a critical service.  On this device both ueventd and
+# charger run before OrangeFox can persist a log or expose ADB, so suppress
+# only that fatal escalation; init will still restart the failed service.
+init.svc_debug.no_fatal.ueventd=true
+init.svc_debug.no_fatal.charger=true
+
 # Evolution X vendor Trustonic configuration. These are normally supplied by
 # vendor/build.prop, but recovery starts the crypto HALs before that property
 # file can be imported.

@@ -9,6 +9,7 @@ bases used during development.
 | Project | Credit / purpose | Revision used |
 | --- | --- | --- |
 | [Android common kernel](https://android.googlesource.com/kernel/common) | Google and Linux kernel contributors; GKI 6.1 base | `8dc7d7757edd922ed1e79851711dc2c47bfcf227` (`android14-6.1-2025-05_r1`) |
+| [Android common kernel](https://android.googlesource.com/kernel/common) | Google and Linux kernel contributors; Nothing OS 4.1 GKI 6.1.162 base | `65896c4edca1614fb2844dc27399c9347d28f86d` (`android14-6.1-2026-03_r9`) |
 | [Evolution X CMF Phone 1 device tree](https://github.com/Evolution-X-Devices/device_nothing_Tetris) | Evolution X device maintainers; ROM/device configuration reference | `e5938ea8fb1d` |
 | [Evolution X CMF Phone 1 kernel artifacts](https://github.com/Evolution-X-Devices/device_nothing_Tetris-kernel) | Evolution X device maintainers; ROM-matched kernel reference | `36a08d06a6b5` |
 | [AOSP Clang prebuilts](https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86) | Android LLVM toolchain | `eed2fff8b93ce059eea7ccd8fc5eee37f8adb432` / `clang-r487747b` |
@@ -43,6 +44,7 @@ contributors.
 | [OFR_TB373FU_A16](https://github.com/killindodo/OFR_TB373FU_A16) | killindodo and contributors; Android 16 MediaTek OrangeFox reference | `c8630e58e14599f4f9787f5742e2e4bfd7343ae7` |
 | [Team Win Recovery Project](https://twrp.me/) | Team Win and contributors; recovery foundation, UI, storage, and device infrastructure | Upstream through OrangeFox sources |
 | [Nothing Open Source](https://github.com/NothingOSS) | Nothing Technology Limited; device kernel sources and related GPL materials | Device-family source reference |
+| [Evolution X for CMF Phone 1](https://xdaforums.com/t/rom-official-16-evolution-x-11-8-for-nothing-cmf-phone-1-tetris.4792973/) | **s-o-d-a** and Evolution X contributors; official ROM and device testing platform | Evolution X 11.10 GApps build 2447 and Vanilla build 2446 |
 
 The R12 interface patch is a port of OrangeFox's own R12 work to its Android 16
 fork; it should not be interpreted as original ownership of OrangeFox artwork,
