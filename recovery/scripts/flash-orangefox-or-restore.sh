@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-artifact_dir="${ARTIFACT_DIR:-$script_dir/../../release-assets}"
-orangefox_image="${ORANGEFOX_IMAGE:-$artifact_dir/CMF-Phone-1-EvolutionX-11.10-OrangeFox-R12.0-Android16-StockPlatform-v17-DataFormatFix-vendor_boot.img}"
-orangefox_sha256="a2a6034671f822c173abe719c5c7d9d69325cbf92e1422ff70b49176a20edb62"
-
 usage() {
     printf 'Usage: %s install|restore\n' "$(basename "$0")"
+    printf 'Install requires ORANGEFOX_IMAGE and ORANGEFOX_SHA256 for your exact ROM build.\n'
     printf 'Restore requires RESTORE_IMAGE and RESTORE_SHA256 from your exact ROM build.\n'
     exit 2
 }
@@ -15,9 +11,10 @@ usage() {
 [[ $# -eq 1 ]] || usage
 case "$1" in
     install)
-        action="INSTALL ORANGEFOX R12.0 ANDROID 16 STOCK-PLATFORM V17 DATA-FORMAT FIX"
-        image="$orangefox_image"
-        expected_sha256="$orangefox_sha256"
+        [[ -n "${ORANGEFOX_IMAGE:-}" && -n "${ORANGEFOX_SHA256:-}" ]] || usage
+        action="INSTALL USER-SUPPLIED ROM-MATCHED ORANGEFOX VENDOR_BOOT"
+        image="$ORANGEFOX_IMAGE"
+        expected_sha256="$ORANGEFOX_SHA256"
         ;;
     restore)
         [[ -n "${RESTORE_IMAGE:-}" && -n "${RESTORE_SHA256:-}" ]] || usage
