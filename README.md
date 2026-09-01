@@ -10,13 +10,21 @@ Experimental, unofficial kernel and recovery builds for CMF Phone 1
 > project author, contributors, upstream projects, OpenAI and OpenAI Codex are
 > not responsible for broken devices, bootloops or lost data.
 
-## v2.0.0 tested matrix
+## Project status
+
+v2.1.0 is the final planned release from the current maintainer. This was a side
+project, and there is no longer enough time for regular development. The full
+kernel source, recovery patches and device tree remain public so the CMF Phone 1
+community can take over OrangeFox maintenance and, if possible, continue the
+kernel. Contributions and successor projects are welcome.
+
+## v2.1.0 tested matrix
 
 | ROM target | Kernel | OrangeFox | Result |
 | --- | --- | --- | --- |
 | Evolution X 11.10 GApps build 2447 | FeaturePack v5, 6.1.134 | R12 v28 GApps | ROM-specific package; GApps build uses its own AVB metadata and platform image |
 | Evolution X 11.10 Vanilla build 2446 | FeaturePack v5, 6.1.134 | R12 v28 Vanilla | Both images live-tested together |
-| Nothing OS 4.1 `B4.1-260812-1726` | FeaturePack v2, 6.1.162 | R12 v5 | Both images live-tested on the exact stock build |
+| Nothing OS 4.1 `B4.1-260812-1726` | FeaturePack v4 Stable, 6.1.162 | R12 v8 Stable | Both installed images and all controlled qualification tests passed on the exact stock build |
 
 Do not interchange GApps, Vanilla or Nothing OS images. Nothing OS uses a
 different GKI base and stock module-signing trust chain. Each OrangeFox image
@@ -39,9 +47,11 @@ startup policy. The optional post-boot module applies a delayed lockdown after
 Android finishes booting. The rejected v6 hard-lock implementation bootlooped
 and is not distributed.
 
-Nothing OS v2 embeds only the public certificate from the exact stock kernel so
+Nothing OS v4 embeds only the public certificate from the exact stock kernel so
 the official Bluetooth/Wi-Fi modules retain access to protected GKI exports. No
-private signing key is included.
+private signing key is included. It also fixes dynamic Shadow Call Stack and
+NTSync integration, duplicate vendor trace-hook handling, and both Android 16K
+page-size migration defects, including the current AOSP VMA-split correction.
 
 ## OrangeFox status
 
@@ -50,12 +60,13 @@ reflash, A/B payload, FBE/internal storage, MTP, clock, battery and sideload
 fixes. Vanilla v28 passed decryption, internal-storage MTP round-trip and a
 non-destructive sideload without the previous finishing/cancel hang.
 
-Nothing OS v5 passed touch, PIN/FBE decryption, internal storage, boot backup
-integrity, direct ZIP installation, on-screen sideload/cancel, MTP service
-transitions, fastbootd, Android reboot and a five-minute stability monitor. Its
-remote command-line MTP action can leave the UI on a single-action loading page;
-normal recovery navigation restores the UI. The OrangeFox CLI/ORS sideload
-diagnostic path also has an output-pipe race, so use the on-screen sideload UI.
+Nothing OS v8 passed GUI boot, touch, PIN/FBE decryption, internal storage,
+bidirectional MTP transfer, two consecutive sideload cycles, post-sideload
+mounting, VINTF/Health checks and Android reboot. It fixes the v7 invalid VINTF
+overlay and the sideload SIGPIPE/recovery-restart path. v7 is withdrawn.
+
+After sideload, v8 intentionally returns to ADB-only USB mode to avoid the old
+finish/cancel deadlock. Re-enable MTP from Mount when needed.
 
 ## Repository layout
 
@@ -64,7 +75,7 @@ diagnostic path also has an output-pipe race, so use the on-screen sideload UI.
 - `recovery/device/nothing/Tetris` — Android 16 device tree with separate
   Evolution X and Nothing OS products.
 - `recovery/patches`, `recovery/scripts` — OrangeFox R12 changes and packaging
-  helpers through Evolution X v28 / Nothing OS v5.
+  helpers through Evolution X v28 / Nothing OS v8.
 - `docs` — live validation and compatibility records.
 - `CREDITS.md`, `LICENSES.md` — upstream acknowledgements and licensing.
 

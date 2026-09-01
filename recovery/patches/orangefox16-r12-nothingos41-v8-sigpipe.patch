@@ -1,0 +1,24 @@
+diff --git a/twrpinstall/adb_install.cpp b/twrpinstall/adb_install.cpp
+--- a/twrpinstall/adb_install.cpp
++++ b/twrpinstall/adb_install.cpp
+@@ -363,6 +363,11 @@ static void CreateMinadbdServiceAndExecuteCommands(
+     const std::map<MinadbdCommand, CommandFunction>& command_map,
+     bool rescue_mode __unused, std::string install_file __unused) {
+-  signal(SIGPIPE, SIG_IGN);
++  // recovery_main() deliberately ignores SIGPIPE for the lifetime of the
++  // recovery process.  Do not reset that process-wide handler here: an ADB
++  // sideload launched through the `twrp` command FIFO disconnects its output
++  // reader while USB is being reconfigured.  Restoring SIG_DFL after minadbd
++  // exits makes the next mirrored GUI/ORS message terminate recovery with
++  // SIGPIPE, which init then restarts and leaves the UI looking stuck.
+ 
+   android::base::unique_fd recovery_socket;
+   android::base::unique_fd minadbd_socket;
+@@ -426,7 +431,6 @@ static void CreateMinadbdServiceAndExecuteCommands(
+     }
+   }
+ 
+-  signal(SIGPIPE, SIG_DFL);
+ }
+ 
+   int twrp_sideload(const char* install_file, Device::BuiltinAction* reboot_action) {

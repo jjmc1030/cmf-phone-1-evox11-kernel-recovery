@@ -137,6 +137,11 @@ BOARD_USES_RECOVERY_AS_BOOT := false
 BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
 BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/recovery.fstab
+ifeq ($(TARGET_PRODUCT),twrp_Tetris_nos41)
+# Keep Evolution X on its common Health declaration while Nothing OS 4.1 uses
+# the Health v2 service exposed by its exact vendor stack.
+TARGET_RECOVERY_DEVICE_DIRS := $(DEVICE_PATH) $(DEVICE_PATH)/nothingos41
+endif
 # The recovery fstab contains the Nothing OS 4.1 Android 16 metadata-FBE
 # flags. Re-parsing a mounted vendor copy caused the v1 recovery process to
 # block at "Using additional fstab for decryption" and init then restarted it.

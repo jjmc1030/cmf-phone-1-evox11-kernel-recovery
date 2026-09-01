@@ -1,3 +1,32 @@
+# v2.1.0 — Nothing OS 4.1 qualified stable final release
+
+## Nothing OS 4.1 stable pair
+
+- Replaced the Nothing OS kernel v2 recommendation with FeaturePack v4 for
+  exact build `B4.1-260812-1726`.
+- Added dynamic Shadow Call Stack, NTSync, duplicate trace-hook and complete
+  Android 16K page-size migration fixes. The v3 `vma_pad_pages` regression no
+  longer reproduces.
+- All requested kernel feature probes and controlled CPU/F2FS/network,
+  Wi-Fi/Bluetooth, camera/location/thermal and log checks passed.
+- Replaced OrangeFox v5 with v8. v8 fixes the invalid v7 VINTF overlay and the
+  ADB sideload SIGPIPE/recovery restart path.
+- v8 passed touch, FBE/internal storage, real bidirectional MTP transfer, two
+  consecutive sideload cycles, post-sideload mounting and VINTF/Health checks.
+- v7 is withdrawn and must not be flashed.
+
+This stable designation applies only to CMF Phone 1 on Nothing OS 4.1 build
+`B4.1-260812-1726`. Other builds and ROMs are not interchangeable.
+
+## Final maintainer release
+
+This is the final planned release from the current maintainer. The work was
+developed as a side project, and there is no longer enough time to continue
+regular kernel or recovery development. The complete source and reproducible
+patches remain public in the hope that the CMF Phone 1 community will take over
+OrangeFox maintenance and, if possible, continue the kernel as well. Thank you
+to everyone who tested, contributed and helped debug the project.
+
 # v2.0.0 — ROM-specific Evolution X and Nothing OS builds
 
 ## Evolution X 11.10

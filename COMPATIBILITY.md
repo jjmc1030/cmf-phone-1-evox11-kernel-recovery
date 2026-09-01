@@ -7,7 +7,7 @@ version alone are not enough for safe `boot` or `vendor_boot` reuse.
 | --- | --- | --- | --- |
 | Evolution X 11.10 GApps build 2447 | v5 GApps image | v28 GApps image | ROM-matched release |
 | Evolution X 11.10 Vanilla build 2446 | v5 Vanilla image | v28 Vanilla image | Live-tested together |
-| Nothing OS 4.1 `B4.1-260812-1726` | v2 stock-module-trust image | v5 Nothing OS image | Live-tested together |
+| Nothing OS 4.1 `B4.1-260812-1726` | v4 stable image | v8 stable image | Installed hashes and controlled qualification passed together |
 | Another Evolution X build | Repackage and revalidate | Rebuild from that build's `vendor_boot` | Unsupported until tested |
 | Another Nothing OS build/OTA | Rebuild for its exact GKI and module signer | Rebuild from its exact `vendor_boot` | Unsupported until tested |
 | Other ROM/device/Android version | Unsupported | Unsupported | Do not flash |
@@ -40,16 +40,17 @@ FBE/internal storage, MTP read/write/delete, clock/battery checks and
 non-destructive ADB sideload. GApps is separately packaged against build 2447;
 do not substitute the Vanilla image.
 
-Nothing OS kernel v2 passed Android boot, Wi-Fi, Bluetooth cycling, camera,
-GNSS-service requests, KernelSU/SUSFS checks, suspend/resume and log audits.
+Nothing OS kernel v4 passed Android boot, every requested kernel feature probe,
+the VMA-split regression test, CPU/F2FS/network stress, Wi-Fi, Bluetooth cycling,
+camera/location/thermal service checks, KernelSU/SUSFS and final log audits.
 Outdoor satellite TTFF, real SIM/IMS calling and long unplugged suspend remain
 unverified.
 
-Nothing OS OrangeFox v5 passed touch, decryption, storage, backup/read integrity,
-direct ZIP, on-screen sideload/cancel, MTP service start/stop, fastbootd and
-Android reboot. Restore-to-partition, Format Data, full ROM flashing, slot
-changes, USB OTG and removable media were not repeated during its final
-non-destructive qualification.
+Nothing OS OrangeFox v8 passed GUI boot, touch, decryption, internal storage,
+checksum-verified MTP transfer, two consecutive harmless sideload cycles,
+post-sideload mounting, correct time/battery and VINTF/Health checks. v7 is
+withdrawn. Format Data, full ROM flashing, slot changes, USB OTG and removable
+media were not repeated during the v8 qualification.
 
 ## OTA and restore guidance
 
